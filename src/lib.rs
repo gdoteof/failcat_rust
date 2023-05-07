@@ -1,9 +1,11 @@
+use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use serde_json::json;
 use vinlookup::get_possible_vins_from_serial;
 use worker::*;
 
 mod utils;
 mod vinlookup;
+mod models;
 
 fn log_request(req: &Request) {
     console_log!(
@@ -27,6 +29,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .get("/", |_, _| Response::ok("Hello from Workers!"))
         .post_async("/form/:field", |mut req, ctx| async move {
             if let Some(name) = ctx.param("field") {
+                ctx.var("WORKERS_RS_VERSION").unwrap();
                 let form = req.form_data().await?;
                 match form.get(name) {
                     Some(FormEntry::Field(value)) => {
@@ -68,24 +71,55 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 match pdf {
                     Ok(None) => {
                         match vinlookup::vinlookup(&vin).await {
-                            Ok(pdf) => {
-                                if pdf == b"SAP API limits exceeded" {
+                            Ok(data) => {
+                                if data == b"SAP API limits exceeded" {
                                     return Response::error("limits exceeded downstream", 429);
                                 }
-                                return Response::from_bytes(pdf)
-                            },
+                                let stored = bucket.put(&vin, data.clone()).execute().await;
+                                match stored {
+                                    Ok(_) => console_log!("stored pdf"),
+                                    Err(_) => continue,
+                                }
+                                let mut headers = HeaderMap::new();
+                                headers.insert("Content-Type", HeaderValue::from_static("application/pdf"));
+                                headers.insert(
+                                    "Content-Disposition",
+                                    HeaderValue::from_str(
+                                        format!(
+                                            "attachment; filename=\"{}.pdf\"",
+                                            vin
+                                        )
+                                        .as_str(),
+                                    )
+                                    .expect("couldn't set header"),
+                                );
+                                return Ok(Response::with_headers(
+                                    Response::from_bytes(data).expect("couldn't get bytes"),
+                                    headers.into(),
+                                ));
+                            }
                             Err(_) => continue,
                         };
                     }
                     Ok(Some(data)) => {
-                        return Response::from_bytes(
-                            data.body().expect("couldn't get body").bytes().await.expect("could not get bytes"),
+                        let body = data.body().expect("couldn't get body");
+                        let bytes = body.bytes().await.expect("could not get bytes");
+                        let mut headers = HeaderMap::new();
+                        headers.insert("Content-Type", HeaderValue::from_static("application/pdf"));
+                        headers.insert(
+                            "Content-Disposition",
+                            HeaderValue::from_str(
+                                format!("attachment; filename=\"{}.pdf\"", vin)
+                                    .as_str(),
+                            )
+                            .expect("couldn't set header"),
                         );
+                        return Ok(Response::with_headers(
+                            Response::from_bytes(bytes).expect("could not get bytes"), headers.into()));
                     }
                     Err(_) => continue,
                 }
             }
-
 
             Response::from_json(&get_possible_vins_from_serial(serial))
         })

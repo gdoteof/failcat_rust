@@ -49,7 +49,6 @@ pub(crate) async fn vinlookup(vin: &str) -> Result<Vec<u8>> {
 }
 
 use itertools::{iproduct, Itertools};
-use worker::console_log;
 use phf::{phf_map, Map};
 
 const VIN_DIGIT_POSITION_MULTIPLIER: [u32; 17] =
@@ -107,7 +106,6 @@ pub fn get_possible_vins_from_serial(serial: &str) -> Vec<String> {
 }
 
 fn get_check_sum_char(vin: &str) -> char {
-    console_log!("Received VIN: ->>{}<<-", vin);
     let mut check_sum_total = 0;
 
     if vin.len() < 17 {
