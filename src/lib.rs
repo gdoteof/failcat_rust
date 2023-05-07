@@ -1,13 +1,13 @@
 use models::{CarId, SerialNumber, highest_serial};
 use models::Car;
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
+use scraper::vinlookup::{self, get_possible_vins_from_serial};
 use serde_json::json;
-use vinlookup::get_possible_vins_from_serial;
 use worker::*;
 
 mod models;
 mod utils;
-mod vinlookup;
+mod scraper;
 mod repository;
 
 fn log_request(req: &Request) {

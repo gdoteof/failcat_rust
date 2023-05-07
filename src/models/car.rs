@@ -1,3 +1,5 @@
+use crate::scraper::vinlookup::{get_possible_vins_from_serial, self};
+
 use super::*;
 use serde::{Deserialize, Serialize};
 

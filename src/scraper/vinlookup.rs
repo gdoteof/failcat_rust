@@ -6,7 +6,7 @@ use reqwest_wasm::header::{
 use reqwest_wasm::Client;
 use worker::*;
 
-pub(crate) async fn vinlookup(vin: &str) -> Result<Vec<u8>> {
+pub async fn vinlookup(vin: &str) -> Result<Vec<u8>> {
     let url = format!("https://prod.idc.kia.us/sticker/find/{vin}");
     let output_path = format!("pdfs/{vin}.pdf");
 

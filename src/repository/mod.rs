@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use worker::*;
 use std::collections::HashMap;
-use wasm_bindgen::JsValue; // Import JsValue from wasm_bindgen
+use wasm_bindgen::JsValue; 
+
+pub mod cars;
+pub use cars::*;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct QueryOptions {

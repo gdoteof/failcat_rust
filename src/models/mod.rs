@@ -5,7 +5,6 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use worker::*;
 
-use crate::vinlookup::{self, get_possible_vins_from_serial};
 
 pub mod car;
 pub use car::*;
