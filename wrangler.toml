@@ -1,0 +1,24 @@
+name = "failcat_rust"
+main = "build/worker/shim.mjs"
+compatibility_date = "2022-01-20"
+
+kv_namespaces = [
+    { binding = "vinscrapes", id = "613a0e2022d44d3998b9873cd81c0f48", preview_id = "747582b6ed3d489db0f93a4dab4713cb" }
+]
+
+[vars]
+WORKERS_RS_VERSION = "0.0.11"
+
+[build]
+command = "cargo install -q worker-build && worker-build --release"
+
+
+[[d1_databases]]
+binding = "failcat_db"
+database_name = "failcat"
+database_id = "666b7a1e-c03f-4a9a-969d-cf1a0bd4f582"
+
+[[r2_buckets]]
+binding = 'pdf_bucket' 
+bucket_name = 'failcatpdfs'
+preview_bucket_name = 'failcatpdfs-preview'
