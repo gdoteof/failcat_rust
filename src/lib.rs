@@ -97,21 +97,9 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                                     Ok(_) => console_log!("stored pdf"),
                                     Err(_) => continue,
                                 }
-                                let mut headers = HeaderMap::new();
-                                headers.insert(
-                                    "Content-Type",
-                                    HeaderValue::from_static("application/pdf"),
-                                );
-                                headers.insert(
-                                    "Content-Disposition",
-                                    HeaderValue::from_str(
-                                        format!("attachment; filename=\"{}.pdf\"", vin).as_str(),
-                                    )
-                                    .expect("couldn't set header"),
-                                );
                                 return Ok(Response::with_headers(
                                     Response::from_bytes(data).expect("couldn't get bytes"),
-                                    headers.into(),
+                                    filePdfHeaders().into(),
                                 ));
                             }
                             Err(_) => continue,
@@ -120,18 +108,9 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                     Ok(Some(data)) => {
                         let body = data.body().expect("couldn't get body");
                         let bytes = body.bytes().await.expect("could not get bytes");
-                        let mut headers = HeaderMap::new();
-                        headers.insert("Content-Type", HeaderValue::from_static("application/pdf"));
-                        headers.insert(
-                            "Content-Disposition",
-                            HeaderValue::from_str(
-                                format!("attachment; filename=\"{}.pdf\"", vin).as_str(),
-                            )
-                            .expect("couldn't set header"),
-                        );
                         return Ok(Response::with_headers(
                             Response::from_bytes(bytes).expect("could not get bytes"),
-                            headers.into(),
+                            filePdfHeaders().into(),
                         ));
                     }
                     Err(_) => continue,
@@ -142,7 +121,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         })
         .post_async("/serial/:serial", |_, ctx| async move {
             let serial = ctx.param("serial").unwrap();
-            let car = Car::from_kv(serial, &ctx).await;
+            let car = Car::from_kv(SerialNumber::from(serial), &ctx).await;
             match car {
                 Ok(Some(car)) => Response::error(format!("Car already saved.: {:?}", car), 409),
                 Err(e) => Response::error(format!("No Car Found?: {:?}", e), 404),
@@ -165,4 +144,14 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         })
         .run(req, env)
         .await
+}
+
+fn filePdfHeaders() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("application/pdf"));
+    headers.insert(
+        "Content-Disposition",
+        HeaderValue::from_str("attachment; filename=\"file.pdf\"").expect("couldn't set header"),
+    );
+    headers
 }

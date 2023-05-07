@@ -5,22 +5,26 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Car {
-    id: Option<CarId>,
-    vin: Vin,
-    ext_color: String,
-    int_color: String,
-    car_model: String,
-    opt_code: String,
-    ship_to: String,
-    sold_to: String,
-    created_date: String,
-    serial_number: SerialNumber,
-    model_year: String,
-    dead_until: Option<String>,
-    last_attempt: Option<String>,
+    pub id: Option<CarId>,
+    pub vin: Vin,
+    pub ext_color: String,
+    pub int_color: String,
+    pub car_model: String,
+    pub opt_code: String,
+    pub ship_to: String,
+    pub sold_to: String,
+    pub created_date: String,
+    pub serial_number: SerialNumber,
+    pub model_year: String,
+    pub dead_until: Option<String>,
+    pub last_attempt: Option<String>,
 }
 
 impl Car {
+    pub fn set_id(&mut self, id: CarId) {
+        self.id = Some(id);
+    }
+
     pub async fn from_d1(id: CarId, ctx: &RouteContext<()>) -> worker::Result<Option<Car>> {
         let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
         let statement = d1.prepare("SELECT * FROM cars WHERE id = ?");
@@ -54,9 +58,9 @@ impl Car {
         };
     }
 
-    pub async fn from_kv(serial: &str, ctx: &RouteContext<()>) -> worker::Result<Option<Car>> {
+    pub async fn from_kv(serial: SerialNumber, ctx: &RouteContext<()>) -> worker::Result<Option<Car>> {
         let kv = ctx.env.kv("failcat").expect("Couldn't get db");
-        let response = kv.get(serial).json().await;
+        let response = kv.get(&serial.to_string()).json().await;
         match response {
             Ok(data) => {
                 let result = data;
@@ -67,7 +71,12 @@ impl Car {
     }
 
     // Add a car to the KV store
-    pub async fn to_kv(&self, ctx: &RouteContext<()>, _sql_id: CarId) -> worker::Result<()> {
+    pub async fn to_kv(&self, ctx: &RouteContext<()>, _sql_id: CarId) -> worker::Result<&CarId> {
+        let car_id = match &self.id {
+            Some(_sql_id) => _sql_id,
+            _ => panic!("No SQL ID or doesn't match"),
+        };
+
         let kv = ctx.env.kv("failcat").expect("Couldn't get db");
         let response = kv
             .put(&self.serial_number.to_string(), &self)
@@ -75,8 +84,8 @@ impl Car {
             .execute()
             .await;
         match response {
-            Ok(_) => Ok(()),
-            Err(_) => Ok(()),
+            Ok(_) => Ok(car_id),
+            Err(_) => Err("Failed to save to kv".into())
         }
     }
 

@@ -29,34 +29,43 @@ pub async fn vinlookup(vin: &str) -> Result<Vec<u8>> {
     headers.insert(REFERER, HeaderValue::from_static("https://www.kia.com"));
     headers.insert(DNT, HeaderValue::from_static("1"));
 
-    let client = Client::builder().default_headers(headers).build().expect("Could not construct client");
-    let response = client.get(url).send().await.expect("Could not send request");
+    let client = Client::builder()
+        .default_headers(headers)
+        .build()
+        .expect("Could not construct client");
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .expect("Could not send request");
 
     if response.status().is_success() {
-        let content = response.bytes().await.expect("Could not get response bytes");
+        let content = response
+            .bytes()
+            .await
+            .expect("Could not get response bytes");
         if content == Bytes::from("SAP API limits exceeded") {
-            return Err(Error::from("SAP API limits exceeded"))
+            return Err(Error::from("SAP API limits exceeded"));
         }
 
         println!("content length: {}", content.len());
         println!("PDF saved to {}", output_path);
-        return Ok(content.into())
+        return Ok(content.into());
     } else {
         eprintln!("Error: {}", response.status());
-        return Err(Error::from(response.status().as_str()))
+        return Err(Error::from(response.status().as_str()));
     }
-
 }
 
 use itertools::{iproduct, Itertools};
 use phf::{phf_map, Map};
 
-use crate::models::SerialNumber;
+use crate::models::{Car, SerialNumber, CarId};
 
 const VIN_DIGIT_POSITION_MULTIPLIER: [u32; 17] =
     [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
 
-static VIN_DIGIT_VALUES: Map<&'static str, u32> = phf_map!{
+static VIN_DIGIT_VALUES: Map<&'static str, u32> = phf_map! {
     "A" =>  1,
     "B" =>  2,
     "C" =>  3,
@@ -146,4 +155,29 @@ pub(crate) fn is_valid_vin(vin: &str) -> bool {
     c == vin.chars().nth(8).unwrap()
 }
 
-
+pub async fn attempt_to_scrape_from_serial(serial: SerialNumber, ctx: RouteContext<()>) -> Result<Option<CarId>> {
+    let car = Car::from_kv(serial, &ctx).await;
+    match car {
+        Ok(Some(Car { id, ..})) => Err(format!("Car already saved.: {:?}", id).into()),
+        Err(e) => Err(e),
+        Ok(None) => {
+            let car = Car::from_vinlookup(serial.into(), &ctx)
+                .await
+                .expect("couldn't find car");
+            match car {
+                Some(car) => {
+                    let car_id = car
+                        .to_d1(&ctx)
+                        .await
+                        .expect("couldn't save car to database");
+                    let kv_id = car
+                        .to_kv(&ctx, car_id)
+                        .await
+                        .expect("couldn't save car to database");
+                    return Ok(Some(*kv_id));
+                }
+                None => Ok(None),
+            }
+        }
+    }
+}

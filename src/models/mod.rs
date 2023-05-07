@@ -11,9 +11,9 @@ pub use car::*;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Vin(pub String);
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 pub struct CarId(pub i32);
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone, Copy)]
 pub struct SerialNumber(pub i32);
 impl Display for SerialNumber {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
