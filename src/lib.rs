@@ -1,11 +1,12 @@
+use models::{Car, CarId};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use serde_json::json;
 use vinlookup::get_possible_vins_from_serial;
 use worker::*;
 
+mod models;
 mod utils;
 mod vinlookup;
-mod models;
 
 fn log_request(req: &Request) {
     console_log!(
@@ -48,6 +49,13 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let version = ctx.var("WORKERS_RS_VERSION")?.to_string();
             Response::ok(version)
         })
+        .get_async("/car/:id", |_, ctx| async move {
+            let id = ctx.param("id").unwrap();
+            match Car::from_d1(CarId(id.parse::<i32>().expect("could not parse CarId")), &ctx).await {
+                Ok(car) => Response::from_json(&car),
+                Err(e) => Response::error(format!("No Car Found?: {:?}", e), 404),
+            }
+        })
         .get_async("/vinlookup/:vin", |_, ctx| async move {
             let vin = ctx.param("vin").unwrap();
             if !vinlookup::is_valid_vin(vin) {
@@ -81,15 +89,14 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                                     Err(_) => continue,
                                 }
                                 let mut headers = HeaderMap::new();
-                                headers.insert("Content-Type", HeaderValue::from_static("application/pdf"));
+                                headers.insert(
+                                    "Content-Type",
+                                    HeaderValue::from_static("application/pdf"),
+                                );
                                 headers.insert(
                                     "Content-Disposition",
                                     HeaderValue::from_str(
-                                        format!(
-                                            "attachment; filename=\"{}.pdf\"",
-                                            vin
-                                        )
-                                        .as_str(),
+                                        format!("attachment; filename=\"{}.pdf\"", vin).as_str(),
                                     )
                                     .expect("couldn't set header"),
                                 );
@@ -109,13 +116,14 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                         headers.insert(
                             "Content-Disposition",
                             HeaderValue::from_str(
-                                format!("attachment; filename=\"{}.pdf\"", vin)
-                                    .as_str(),
+                                format!("attachment; filename=\"{}.pdf\"", vin).as_str(),
                             )
                             .expect("couldn't set header"),
                         );
                         return Ok(Response::with_headers(
-                            Response::from_bytes(bytes).expect("could not get bytes"), headers.into()));
+                            Response::from_bytes(bytes).expect("could not get bytes"),
+                            headers.into(),
+                        ));
                     }
                     Err(_) => continue,
                 }

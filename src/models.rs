@@ -1,13 +1,13 @@
-use chrono::{NaiveDateTime, Utc};
+use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
 use serde::{Deserialize, Serialize};
-use worker::{*};
+use worker::*;
 
 #[derive(Debug, Deserialize, Serialize)]
-pub struct Vin(String);
+pub struct Vin(pub String);
 #[derive(Debug, Deserialize, Serialize)]
-pub struct CarId(i32);
+pub struct CarId(pub i32);
 #[derive(Debug, Deserialize, Serialize)]
-pub struct SerialNumber(i32);
+pub struct SerialNumber(pub i32);
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Car {
@@ -19,24 +19,24 @@ pub struct Car {
     opt_code: String,
     ship_to: String,
     sold_to: String,
-    created_date: NaiveDateTime,
+    created_date: String,
     serial_number: i32,
-    model_year: i32,
-    dead_until: NaiveDateTime,
-    last_attempt: NaiveDateTime,
+    model_year: String,
+    dead_until: Option<String>,
+    last_attempt: Option<String>,
 }
 
 impl Car {
-    pub async fn from_d1(id: &str, ctx: RouteContext<Car>) -> worker::Result<Option<Car>> {
-        let d1 = ctx.env.d1("failcat").expect("Couldn't get db");
-        let statement = d1.prepare("SELECT * FROM cars WHERE id = $1");
-        let query = statement.bind(&[id.into()])?;
+    pub async fn from_d1(id: CarId, ctx: &RouteContext<()>) -> worker::Result<Option<Car>> {
+        let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
+        let statement = d1.prepare("SELECT * FROM cars WHERE id = ?");
+        let query = statement.bind(&[id.0.into()])?;
         let result = query.first::<Car>(None).await?;
         Ok(result)
     }
 
-    pub async fn to_d1(&self, ctx: RouteContext<()>) -> worker::Result<CarId> {
-        let d1 = ctx.env.d1("failcat").expect("Couldn't get db");
+    pub async fn to_d1(&self, ctx: RouteContext<(Car)>) -> worker::Result<CarId> {
+        let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
         let statement = d1.prepare(
             "INSERT INTO cars (vin, ext_color, int_color, car_model, opt_code, ship_to, sold_to, created_date, serial_number, model_year, dead_until, last_attempt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())",
         );
@@ -48,29 +48,11 @@ impl Car {
             self.opt_code.clone().into(),
             self.ship_to.clone().into(),
             self.sold_to.clone().into(),
-            self.created_date
-                .clone()
-                .and_local_timezone(Utc)
-                .earliest()
-                .expect("non")
-                .to_string()
-                .into(),
+            self.created_date.clone().to_string().into(),
             self.serial_number.clone().into(),
             self.model_year.clone().into(),
-            self.dead_until
-                .clone()
-                .and_local_timezone(Utc)
-                .earliest()
-                .expect("non")
-                .to_string()
-                .into(),
-            self.last_attempt
-                .clone()
-                .and_local_timezone(Utc)
-                .earliest()
-                .expect("non")
-                .to_string()
-                .into(),
+            self.dead_until.clone().into(),
+            self.last_attempt.clone().into(),
         ])?;
         return match query.first(None).await? {
             Some(Car { id, .. }) => Ok(id.unwrap()),
