@@ -1,4 +1,5 @@
-use models::{Car, CarId, SerialNumber, highest_serial};
+use models::{CarId, SerialNumber, highest_serial};
+use models::Car;
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use serde_json::json;
 use vinlookup::get_possible_vins_from_serial;
@@ -7,6 +8,7 @@ use worker::*;
 mod models;
 mod utils;
 mod vinlookup;
+mod repository;
 
 fn log_request(req: &Request) {
     console_log!(

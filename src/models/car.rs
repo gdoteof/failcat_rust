@@ -1,57 +1,5 @@
-use std::{fmt::{Display, Formatter}, ops::Add};
-
-use chrono::Utc;
-
+use super::*;
 use serde::{Deserialize, Serialize};
-use worker::*;
-
-use crate::vinlookup::{self, get_possible_vins_from_serial};
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Vin(pub String);
-#[derive(Debug, Deserialize, Serialize)]
-pub struct CarId(pub i32);
-#[derive(Debug, Deserialize, Serialize)]
-pub struct SerialNumber(pub i32);
-impl Display for SerialNumber {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.to_string())
-    }
-}
-
-impl SerialNumber {
-    fn from_str(serial: &str) -> Self {
-        SerialNumber(
-            serial
-                .split_whitespace()
-                .last()
-                .unwrap()
-                .parse::<i32>()
-                .expect("Could not parse"),
-        )
-    }
-}
-
-impl From<&std::string::String> for SerialNumber {
-    fn from(serial: &std::string::String) -> Self {
-        SerialNumber(
-            serial
-                .split_whitespace()
-                .last()
-                .unwrap()
-                .parse::<i32>()
-                .expect("Could not parse"),
-        )
-    }
-}
-
-impl Add<i32> for SerialNumber {
-    type Output = Self;
-
-    fn add(self, rhs: i32) -> Self::Output {
-        SerialNumber(self.0 + rhs)
-    }
-}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Car {
@@ -239,35 +187,4 @@ impl Car {
         }
         Ok(None)
     }
-}
-
-pub async fn highest_serial(ctx: RouteContext<()>) -> SerialNumber {
-    let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
-    let statement = d1.prepare("SELECT max(serial_number) FROM cars");
-    let rows = statement.first::<i32>(None).await.expect("Couldn't get rows");
-    return match rows {
-        Some(row) => SerialNumber(row),
-        None => SerialNumber(0),
-    }
-}
-
-pub struct VinScrape {
-    pub vin: String,
-    pub dealer: Dealer,
-    pub car_model: CarModel,
-    pub car: Car,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct Dealer {
-    dealer_code: String,
-    address: String,
-    zip: String,
-    car_count: i32,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CarModel {
-    model_code: String,
-    description: String,
 }
