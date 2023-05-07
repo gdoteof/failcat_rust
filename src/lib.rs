@@ -1,4 +1,4 @@
-use models::{Car, CarId};
+use models::{Car, CarId, SerialNumber, highest_serial};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use serde_json::json;
 use vinlookup::get_possible_vins_from_serial;
@@ -51,7 +51,12 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         })
         .get_async("/car/:id", |_, ctx| async move {
             let id = ctx.param("id").unwrap();
-            match Car::from_d1(CarId(id.parse::<i32>().expect("could not parse CarId")), &ctx).await {
+            match Car::from_d1(
+                CarId(id.parse::<i32>().expect("could not parse CarId")),
+                &ctx,
+            )
+            .await
+            {
                 Ok(car) => Response::from_json(&car),
                 Err(e) => Response::error(format!("No Car Found?: {:?}", e), 404),
             }
@@ -63,18 +68,20 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             }
 
             match vinlookup::vinlookup(vin).await {
-                Ok(_) => {
-                    get_possible_vins_from_serial("12345");
-                    Response::ok("Success")
-                }
+                Ok(_) => Response::ok("Success"),
                 Err(e) => Response::error(e.to_string(), 500),
             }
         })
         .get_async("/serial/:serial", |_, ctx| async move {
-            let serial = ctx.param("serial").unwrap();
-            let vins = get_possible_vins_from_serial(serial);
+            let serial = SerialNumber(
+                ctx.param("serial")
+                    .unwrap()
+                    .parse::<i32>()
+                    .expect("could not parse serial"),
+            );
+            let vins = get_possible_vins_from_serial(&serial);
+            let bucket = ctx.bucket("pdf_bucket").unwrap();
             for vin in vins {
-                let bucket = ctx.bucket("pdf_bucket").unwrap();
                 let pdf = bucket.get(&vin).execute().await;
                 match pdf {
                     Ok(None) => {
@@ -129,7 +136,30 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 }
             }
 
-            Response::from_json(&get_possible_vins_from_serial(serial))
+            Response::from_json(&get_possible_vins_from_serial(&serial))
+        })
+        .post_async("/serial/:serial", |_, ctx| async move {
+            let serial = ctx.param("serial").unwrap();
+            let car = Car::from_kv(serial, &ctx).await;
+            match car {
+                Ok(Some(car)) => Response::error(format!("Car already saved.: {:?}", car), 409),
+                Err(e) => Response::error(format!("No Car Found?: {:?}", e), 404),
+                Ok(None) => {
+                    let car = Car::from_vinlookup(serial.into(), &ctx).await.expect("couldn't find car");
+                    match car {
+                        Some(car) => {
+                            let car_id = car.to_d1(&ctx).await.expect("couldn't save car to database");
+                            let car = car.to_kv(&ctx, car_id).await.expect("couldn't save car to database");
+                            return Response::from_json(&car)
+                        },
+                        None => return Response::error("No Car Found", 404),
+                    }
+                },
+            }
+        })
+        .get_async("/scrape/next", |_, ctx| async move {
+            let next_serial_number = highest_serial(ctx).await + 1;
+            Response::ok(next_serial_number.to_string())
         })
         .run(req, env)
         .await

@@ -51,6 +51,8 @@ pub(crate) async fn vinlookup(vin: &str) -> Result<Vec<u8>> {
 use itertools::{iproduct, Itertools};
 use phf::{phf_map, Map};
 
+use crate::models::SerialNumber;
+
 const VIN_DIGIT_POSITION_MULTIPLIER: [u32; 17] =
     [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
 
@@ -91,7 +93,7 @@ static VIN_DIGIT_VALUES: Map<&'static str, u32> = phf_map!{
 };
 
 const VIN_YEAR: char = 'P';
-pub fn get_possible_vins_from_serial(serial: &str) -> Vec<String> {
+pub fn get_possible_vins_from_serial(serial: &SerialNumber) -> Vec<String> {
     let vin_starts = get_possible_vins_starts();
     iproduct!(vin_starts, VIN_DIGIT_VALUES.keys())
         .map(|(vin_start, vin_char)| {
@@ -143,3 +145,5 @@ pub(crate) fn is_valid_vin(vin: &str) -> bool {
     let c = get_check_sum_char(vin);
     c == vin.chars().nth(8).unwrap()
 }
+
+
