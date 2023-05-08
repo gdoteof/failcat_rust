@@ -1,14 +1,14 @@
-use models::{CarId, SerialNumber, highest_serial};
 use models::Car;
+use models::{highest_serial, CarId, SerialNumber};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
-use scraper::vinlookup::{self, get_possible_vins_from_serial, attempt_to_scrape_from_serial};
+use scraper::vinlookup::{self, attempt_to_scrape_from_serial, get_possible_vins_from_serial};
 use serde_json::json;
 use worker::*;
 
 mod models;
-mod utils;
-mod scraper;
 mod repository;
+mod scraper;
+mod utils;
 
 fn log_request(req: &Request) {
     console_log!(
@@ -126,21 +126,40 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Ok(Some(car)) => Response::error(format!("Car already saved.: {:?}", car), 409),
                 Err(e) => Response::error(format!("No Car Found?: {:?}", e), 404),
                 Ok(None) => {
-                    let car = Car::from_vinlookup(serial.into(), &ctx).await.expect("couldn't find car");
+                    let car = Car::from_vinlookup(serial.into(), &ctx)
+                        .await
+                        .expect("couldn't find car");
                     match car {
                         Some(car) => {
-                            let car_id = car.to_d1(&ctx).await.expect("couldn't save car to database");
-                            let car = car.to_kv(&ctx, Some(car_id)).await.expect("couldn't save car to database");
-                            return Response::from_json(&car)
-                        },
+                            let car_id = car
+                                .to_d1(&ctx)
+                                .await
+                                .expect("couldn't save car to database");
+                            let car = car
+                                .to_kv(&ctx, Some(car_id))
+                                .await
+                                .expect("couldn't save car to database");
+                            return Response::from_json(&car);
+                        }
                         None => return Response::error("No Car Found", 404),
                     }
-                },
+                }
             }
         })
-        .get_async("/scrape/next", |_, ctx| async move {
+        .get_async("/scrape_next", |_, ctx| async move {
             let next_serial_number = highest_serial(&ctx).await + 1;
             match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
+                Ok(car_id) => Response::from_json(&car_id),
+                Err(e) => Response::error(e.to_string(), 500),
+            }
+        })
+        .get_async("/scrape:serial_number", |_, ctx| async move {
+            let serial_number = ctx
+                .param("serial_number")
+                .unwrap()
+                .parse::<i32>()
+                .expect("couldn't parse serial number");
+            match attempt_to_scrape_from_serial(SerialNumber(serial_number), &ctx).await {
                 Ok(car_id) => Response::from_json(&car_id),
                 Err(e) => Response::error(e.to_string(), 500),
             }

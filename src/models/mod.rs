@@ -1,10 +1,12 @@
-use std::{fmt::{Display, Formatter}, ops::Add};
+use std::{
+    fmt::{Display, Formatter},
+    ops::Add,
+};
 
 use chrono::Utc;
 
 use serde::{Deserialize, Serialize};
 use worker::*;
-
 
 pub mod car;
 pub use car::*;
@@ -62,15 +64,17 @@ impl Add<i32> for SerialNumber {
     }
 }
 
-
 pub async fn highest_serial(ctx: &RouteContext<()>) -> SerialNumber {
     let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
     let statement = d1.prepare("SELECT max(serial_number) FROM cars");
-    let rows = statement.first::<i32>(Some("max(serial_number)")).await.expect("Couldn't get rows");
+    let rows = statement
+        .first::<i32>(Some("max(serial_number)"))
+        .await
+        .expect("Couldn't get rows");
     return match rows {
         Some(row) => SerialNumber(row),
         None => SerialNumber(0),
-    }
+    };
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -138,7 +142,10 @@ impl CarModel {
         }
     }
 
-    pub async fn from_d1(model_code: &str, ctx: &RouteContext<()>) -> worker::Result<Option<CarModel>> {
+    pub async fn from_d1(
+        model_code: &str,
+        ctx: &RouteContext<()>,
+    ) -> worker::Result<Option<CarModel>> {
         let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
         let statement = d1.prepare("SELECT * FROM car_models WHERE model_code = ?");
         let query = statement.bind(&[model_code.into()])?;
@@ -153,7 +160,7 @@ pub struct Dealer {
     address: String,
     zip: String,
     car_count: i32, // Aggregated value, can be calculated when needed
-    // cars relationship is omitted here, but can be implemented if needed
+                    // cars relationship is omitted here, but can be implemented if needed
 }
 
 impl Dealer {
@@ -166,7 +173,10 @@ impl Dealer {
         }
     }
 
-    pub async fn from_d1(dealer_code: &str, ctx: &RouteContext<()>) -> worker::Result<Option<Self>> {
+    pub async fn from_d1(
+        dealer_code: &str,
+        ctx: &RouteContext<()>,
+    ) -> worker::Result<Option<Self>> {
         let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
         let statement = d1.prepare("SELECT * FROM dealers WHERE dealer_code = ?");
         let query = statement.bind(&[dealer_code.into()])?;

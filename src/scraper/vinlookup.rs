@@ -61,7 +61,7 @@ pub async fn vinlookup(vin: &str) -> Result<Vec<u8>> {
 use itertools::{iproduct, Itertools};
 use phf::{phf_map, Map};
 
-use crate::models::{Car, SerialNumber, CarId, ScraperLog};
+use crate::models::{Car, CarId, ScraperLog, SerialNumber};
 
 const VIN_DIGIT_POSITION_MULTIPLIER: [u32; 17] =
     [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
@@ -156,11 +156,14 @@ pub(crate) fn is_valid_vin(vin: &str) -> bool {
     c == vin.chars().nth(8).unwrap()
 }
 
-pub async fn attempt_to_scrape_from_serial(serial: SerialNumber, ctx: &RouteContext<()>) -> Result<Option<CarId>> {
+pub async fn attempt_to_scrape_from_serial(
+    serial: SerialNumber,
+    ctx: &RouteContext<()>,
+) -> Result<Option<CarId>> {
     console_debug!("Attempting to scrape from serial: {}", serial);
     let car = Car::from_kv(serial, &ctx).await;
     match car {
-        Ok(Some(Car { id, ..})) => Err(format!("Car already saved.: {:?}", id).into()),
+        Ok(Some(Car { id, .. })) => Err(format!("Car already saved.: {:?}", id).into()),
         Err(e) => Err(e),
         Ok(None) => {
             console_debug!("serial not saved to kv: {}", serial);

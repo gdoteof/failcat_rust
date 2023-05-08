@@ -35,7 +35,7 @@ impl Car {
         serial_number: SerialNumber,
         model_year: String,
         dead_until: Option<String>,
-        last_attempt: Option<String>
+        last_attempt: Option<String>,
     ) -> Self {
         Self {
             id: None,

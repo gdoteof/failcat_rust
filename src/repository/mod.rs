@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use worker::*;
 use std::collections::HashMap;
-use wasm_bindgen::JsValue; 
+use wasm_bindgen::JsValue;
+use worker::*;
 
 pub mod cars;
 pub use cars::*;

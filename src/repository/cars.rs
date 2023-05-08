@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, result};
-use worker::*;
 use wasm_bindgen::JsValue;
+use worker::*;
 
 use crate::models::{Car, CarId};
 
