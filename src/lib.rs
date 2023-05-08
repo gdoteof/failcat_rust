@@ -194,9 +194,5 @@ fn file_pdf_headers(vin: &str) -> HeaderMap {
         "Access-Control-Allow-Origin",
         HeaderValue::from_static("https://failcat.vteng.io"),
     );
-    headers.insert(
-        "Content-Disposition",
-        HeaderValue::from_str(format!("attachment; filename=\"file.pdf\"").as_ref()).expect("couldn't set header"),
-    );
     headers
 }
