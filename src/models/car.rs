@@ -1,11 +1,9 @@
-use std::f32::consts::E;
-
 use crate::scraper::vinlookup::{self, get_possible_vins_from_serial};
 use chrono::{DateTime, Utc};
 use worker::wasm_bindgen::JsValue; // Add Fixed to imports
 
 use super::*;
-use serde::{ser, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub struct Car {
@@ -178,7 +176,7 @@ impl Car {
 
     pub async fn from_pdf(pdf_bytes: Vec<u8>) -> worker::Result<Option<Car>> {
         let pdf_text = pdf_extract::extract_text_from_mem(&pdf_bytes).expect("Couldn't parse pdf");
-        let model_year = "TELLURIDE";
+        let model_year = "2023";
         let model = "MODEL/OPT.CODE";
         let ext_color = "EXTERIOR COLOR";
         let int_color = "INTERIOR COLOR";
@@ -186,7 +184,7 @@ impl Car {
         let port = "PORT OF ENTRY";
         let sold_to = "Sold To";
         let ship_to = "Ship To";
-        let _model_year_index = pdf_text.find(model_year).unwrap_or(0);
+        let model_year_index = pdf_text.find(model_year).unwrap_or(0);
         let model_index = pdf_text.find(model).unwrap_or(0);
         let ext_color_index = pdf_text.find(ext_color).unwrap_or(0);
         let int_color_index = pdf_text.find(int_color).unwrap_or(0);
@@ -228,7 +226,7 @@ impl Car {
             car_model: car_description,
             opt_code,
             ship_to: ship_to_value.clone(),
-            sold_to: sold_to_value,
+            sold_to: sold_to_value[..5].to_string(),
             created_date: Utc::now(),
             serial_number: Vin(vin_value).into(),
             model_year: model_year.to_string(),

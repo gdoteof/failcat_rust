@@ -73,14 +73,6 @@ pub async fn highest_serial(ctx: &RouteContext<()>) -> SerialNumber {
     }
 }
 
-pub struct VinScrape {
-    pub vin: String,
-    pub dealer: Dealer,
-    pub car_model: CarModel,
-    pub car: Car,
-}
-
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ScraperLog {
     id: Option<i32>,
