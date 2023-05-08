@@ -23,6 +23,37 @@ pub struct Car {
 }
 
 impl Car {
+    pub fn new(
+        vin: Vin,
+        ext_color: String,
+        int_color: String,
+        car_model: String,
+        opt_code: String,
+        ship_to: String,
+        sold_to: String,
+        created_on: DateTime<Utc>,
+        serial_number: SerialNumber,
+        model_year: String,
+        dead_until: Option<String>,
+        last_attempt: Option<String>
+    ) -> Self {
+        Self {
+            id: None,
+            vin,
+            ext_color,
+            int_color,
+            car_model,
+            opt_code,
+            ship_to,
+            sold_to,
+            created_date: Utc::now(),
+            serial_number,
+            model_year,
+            dead_until: None,
+            last_attempt: None,
+        }
+    }
+
     pub fn set_id(&mut self, id: CarId) {
         self.id = Some(id);
     }
@@ -102,10 +133,12 @@ impl Car {
             self.serial_number.0.into(),
             self.model_year.clone().into(),
             Utc::now().to_string().into(),
-            self.last_attempt.clone().into(),
+            Utc::now().to_string().into(),
         ];
 
         let maybe_statement = statement.bind(&bind_list);
+        console_debug!("bind list {:?}", bind_list);
+        console_debug!("statement bound {:?}", maybe_statement);
 
         match maybe_statement {
             Ok(statement) => {
@@ -117,7 +150,11 @@ impl Car {
                             .expect("Couldn't find car we just saved");
                         Ok(car_id)
                     }
-                    Ok(Some(something)) => Err(format!("\n\nError inserting car into db unexpected: {:?}", something).into()),
+                    Ok(Some(something)) => Err(format!(
+                        "\n\nError inserting car into db unexpected: {:?}",
+                        something
+                    )
+                    .into()),
                     Err(e) => Err(format!("\n\nError inserting car into db: {:?}", e).into()),
                 };
             }
@@ -184,7 +221,7 @@ impl Car {
         let port = "PORT OF ENTRY";
         let sold_to = "Sold To";
         let ship_to = "Ship To";
-        let model_year_index = pdf_text.find(model_year).unwrap_or(0);
+        let _model_year_index = pdf_text.find(model_year).unwrap_or(0);
         let model_index = pdf_text.find(model).unwrap_or(0);
         let ext_color_index = pdf_text.find(ext_color).unwrap_or(0);
         let int_color_index = pdf_text.find(int_color).unwrap_or(0);
@@ -276,6 +313,26 @@ impl Car {
                 }
                 Ok(Some(object)) => {
                     console_debug!("found {} in bucket with size: {:?}", vin, object.size());
+                    if object.size() == 54 {
+                        console_debug!("found broken pdf in bucket for vin:{}", vin);
+                        // VIN is broken
+                        let broken_string = "BROKEN".to_string();
+                        let vin = Vin(vin);
+                        return Ok(Some(Car::new(
+                            vin.clone(),
+                            broken_string.clone(),
+                            broken_string.clone(),
+                            broken_string.clone(),
+                            broken_string.clone(),
+                            broken_string.clone(),
+                            broken_string.clone(),
+                            Utc::now(),
+                            SerialNumber::from(vin),
+                            broken_string,
+                            Some(Utc::now().to_string()),
+                            Some(Utc::now().to_string()),
+                        )));
+                    }
                     let body = object.body().expect("couldn't get body");
                     let bytes = body.bytes().await.expect("could not get bytes");
                     match Car::from_pdf(bytes).await {
