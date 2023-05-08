@@ -164,7 +164,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Err(e) => Response::error(e.to_string(), 500),
             }
         })
-        .get_async("/window-sticker/:vin.pdf", |_, ctx| async move {
+        .get_async("/window-sticker/:vin", |_, ctx| async move {
             let vin = ctx.param("vin").unwrap();
             match vinlookup(vin).await {
                 Ok(data) => {
@@ -186,6 +186,14 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
 fn file_pdf_headers(vin: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", HeaderValue::from_static("application/pdf"));
+    headers.insert(
+        "Content-Disposition",
+        HeaderValue::from_str(format!("attachment; filename=\"window-sticker-{vin}.pdf\"").as_ref()).expect("couldn't set header"),
+    );
+    headers.insert(
+        "Access-Control-Allow-Origin",
+        HeaderValue::from_static("https://failcat.vteng.io"),
+    );
     headers.insert(
         "Content-Disposition",
         HeaderValue::from_str(format!("attachment; filename=\"file.pdf\"").as_ref()).expect("couldn't set header"),
