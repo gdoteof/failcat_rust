@@ -1,7 +1,7 @@
 use models::{CarId, SerialNumber, highest_serial};
 use models::Car;
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
-use scraper::vinlookup::{self, get_possible_vins_from_serial};
+use scraper::vinlookup::{self, get_possible_vins_from_serial, attempt_to_scrape_from_serial};
 use serde_json::json;
 use worker::*;
 
@@ -130,7 +130,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                     match car {
                         Some(car) => {
                             let car_id = car.to_d1(&ctx).await.expect("couldn't save car to database");
-                            let car = car.to_kv(&ctx, car_id).await.expect("couldn't save car to database");
+                            let car = car.to_kv(&ctx, Some(car_id)).await.expect("couldn't save car to database");
                             return Response::from_json(&car)
                         },
                         None => return Response::error("No Car Found", 404),
@@ -139,8 +139,11 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             }
         })
         .get_async("/scrape/next", |_, ctx| async move {
-            let next_serial_number = highest_serial(ctx).await + 1;
-            Response::ok(next_serial_number.to_string())
+            let next_serial_number = highest_serial(&ctx).await + 1;
+            match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
+                Ok(car_id) => Response::from_json(&car_id),
+                Err(e) => Response::error(e.to_string(), 500),
+            }
         })
         .run(req, env)
         .await

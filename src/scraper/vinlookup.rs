@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use chrono::Utc;
 use reqwest_wasm::header::{
     HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, CACHE_CONTROL, DNT, ORIGIN, REFERER,
     USER_AGENT,
@@ -60,7 +61,7 @@ pub async fn vinlookup(vin: &str) -> Result<Vec<u8>> {
 use itertools::{iproduct, Itertools};
 use phf::{phf_map, Map};
 
-use crate::models::{Car, SerialNumber, CarId};
+use crate::models::{Car, SerialNumber, CarId, ScraperLog};
 
 const VIN_DIGIT_POSITION_MULTIPLIER: [u32; 17] =
     [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
@@ -155,25 +156,34 @@ pub(crate) fn is_valid_vin(vin: &str) -> bool {
     c == vin.chars().nth(8).unwrap()
 }
 
-pub async fn attempt_to_scrape_from_serial(serial: SerialNumber, ctx: RouteContext<()>) -> Result<Option<CarId>> {
+pub async fn attempt_to_scrape_from_serial(serial: SerialNumber, ctx: &RouteContext<()>) -> Result<Option<CarId>> {
+    console_debug!("Attempting to scrape from serial: {}", serial);
     let car = Car::from_kv(serial, &ctx).await;
     match car {
         Ok(Some(Car { id, ..})) => Err(format!("Car already saved.: {:?}", id).into()),
         Err(e) => Err(e),
         Ok(None) => {
+            console_debug!("serial not saved to kv: {}", serial);
             let car = Car::from_vinlookup(serial.into(), &ctx)
                 .await
                 .expect("couldn't find car");
             match car {
-                Some(car) => {
-                    let car_id = car
-                        .to_d1(&ctx)
-                        .await
-                        .expect("couldn't save car to database");
+                Some(mut car) => {
+                    console_debug!("we found a car in vinlookup: {car:?}");
+                    let car_id = match car.to_d1(&ctx).await {
+                        Ok(created_id) => created_id,
+                        Err(e) => {
+                            console_error!("We received: an error {e:?}");
+                            panic!("We received: an error writing to d1");
+                        }
+                    };
+                    console_debug!("we have {car_id:?} for {car:?}");
+                    car.set_id(car_id);
                     let kv_id = car
-                        .to_kv(&ctx, car_id)
+                        .to_kv(&ctx, Some(car_id))
                         .await
                         .expect("couldn't save car to database");
+                    ScraperLog::new(1, Utc::now().to_string(), "serial".to_owned(), true);
                     return Ok(Some(*kv_id));
                 }
                 None => Ok(None),

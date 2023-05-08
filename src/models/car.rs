@@ -1,9 +1,13 @@
-use crate::scraper::vinlookup::{get_possible_vins_from_serial, self};
+use std::f32::consts::E;
+
+use crate::scraper::vinlookup::{self, get_possible_vins_from_serial};
+use chrono::{DateTime, Utc};
+use worker::wasm_bindgen::JsValue; // Add Fixed to imports
 
 use super::*;
-use serde::{Deserialize, Serialize};
+use serde::{ser, Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, PartialOrd)]
 pub struct Car {
     pub id: Option<CarId>,
     pub vin: Vin,
@@ -13,7 +17,7 @@ pub struct Car {
     pub opt_code: String,
     pub ship_to: String,
     pub sold_to: String,
-    pub created_date: String,
+    pub created_date: DateTime<Utc>,
     pub serial_number: SerialNumber,
     pub model_year: String,
     pub dead_until: Option<String>,
@@ -33,12 +37,62 @@ impl Car {
         Ok(result)
     }
 
-    pub async fn to_d1(&self, ctx: &RouteContext<()>) -> worker::Result<CarId> {
+    pub async fn from_d1_serial(
+        serial_number: SerialNumber,
+        ctx: &RouteContext<()>,
+    ) -> worker::Result<Option<CarId>> {
+        console_debug!("Entering from_d1_serial with:{}", serial_number);
         let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
+        let statement = d1.prepare("SELECT * FROM cars WHERE serial_number = ?");
+        console_debug!("statement prepared {:?}", statement);
+        let query = statement.bind(&[serial_number.0.into()]);
+        console_debug!("query bound {:?}", query);
+        return match query {
+            Ok(q) => {
+                console_debug!("query ok");
+                let result = q.first::<CarId>("id".into()).await;
+                console_debug!("got result from d1: {:?}", result);
+                match result {
+                    Ok(r) => {
+                        console_debug!("result ok");
+                        Ok(r)
+                    }
+                    Err(e) => {
+                        console_debug!("result error: {:?}", e);
+                        Err(e)
+                    }
+                }
+            }
+            Err(e) => {
+                console_debug!("query error: {:?}", e);
+                Err(e)
+            }
+        };
+    }
+
+    pub async fn to_d1(&self, ctx: &RouteContext<()>) -> worker::Result<CarId> {
+        console_debug!("attempting to write to D1 with:\n{:?}", self);
+        let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
+        let car_id = Car::from_d1_serial(self.serial_number.clone(), ctx).await;
+        match car_id {
+            Ok(Some(id)) => {
+                console_debug!("Car already exists in db with id: {:?}", id);
+                return Ok(id);
+            }
+            Ok(None) => (),
+            Err(e) => return Err(e),
+        }
         let statement = d1.prepare(
-            "INSERT INTO cars (vin, ext_color, int_color, car_model, opt_code, ship_to, sold_to, created_date, serial_number, model_year, dead_until, last_attempt) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())",
+            "INSERT INTO cars (vin, ext_color, int_color, car_model, opt_code, ship_to, sold_to, created_date, serial_number, model_year, dead_until, last_attempt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
         );
-        let query = statement.bind(&[
+
+        let created_date = self
+            .created_date
+            .clone()
+            .format("%Y-%m-%d %H:%M:%S%.6f")
+            .to_string();
+
+        let bind_list: [JsValue; 12] = [
             self.vin.0.clone().into(),
             self.ext_color.clone().into(),
             self.int_color.clone().into(),
@@ -46,20 +100,41 @@ impl Car {
             self.opt_code.clone().into(),
             self.ship_to.clone().into(),
             self.sold_to.clone().into(),
-            self.created_date.clone().to_string().into(),
+            created_date.into(),
             self.serial_number.0.into(),
             self.model_year.clone().into(),
-            self.dead_until.clone().into(),
+            Utc::now().to_string().into(),
             self.last_attempt.clone().into(),
-        ])?;
-        return match query.first(None).await? {
-            Some(Car { id, .. }) => Ok(id.unwrap()),
-            None => Err("No car found".into()),
-        };
+        ];
+
+        let maybe_statement = statement.bind(&bind_list);
+
+        match maybe_statement {
+            Ok(statement) => {
+                console_debug!("\n\nInserting car into db with statement");
+                return match statement.first::<()>(None).await {
+                    Ok(None) => {
+                        let car_id = Car::from_d1_serial(self.serial_number.clone(), ctx)
+                            .await?
+                            .expect("Couldn't find car we just saved");
+                        Ok(car_id)
+                    }
+                    Ok(Some(something)) => Err(format!("\n\nError inserting car into db unexpected: {:?}", something).into()),
+                    Err(e) => Err(format!("\n\nError inserting car into db: {:?}", e).into()),
+                };
+            }
+            Err(e) => {
+                console_debug!("\n\nActually binding failed with: {:?}", e);
+                return Err(e);
+            }
+        }
     }
 
-    pub async fn from_kv(serial: SerialNumber, ctx: &RouteContext<()>) -> worker::Result<Option<Car>> {
-        let kv = ctx.env.kv("failcat").expect("Couldn't get db");
+    pub async fn from_kv(
+        serial: SerialNumber,
+        ctx: &RouteContext<()>,
+    ) -> worker::Result<Option<Car>> {
+        let kv = ctx.env.kv("vinscrapes").expect("Couldn't get db");
         let response = kv.get(&serial.to_string()).json().await;
         match response {
             Ok(data) => {
@@ -71,13 +146,25 @@ impl Car {
     }
 
     // Add a car to the KV store
-    pub async fn to_kv(&self, ctx: &RouteContext<()>, _sql_id: CarId) -> worker::Result<&CarId> {
+    pub async fn to_kv(
+        &self,
+        ctx: &RouteContext<()>,
+        sql_id: Option<CarId>,
+    ) -> worker::Result<&CarId> {
+        if sql_id.is_none() {
+            panic!("No SQL ID");
+        }
+
         let car_id = match &self.id {
-            Some(_sql_id) => _sql_id,
+            Some(db_id) => db_id,
             _ => panic!("No SQL ID or doesn't match"),
         };
 
-        let kv = ctx.env.kv("failcat").expect("Couldn't get db");
+        if sql_id.unwrap() != *car_id {
+            panic!("No SQL IDs Don't match");
+        }
+
+        let kv = ctx.env.kv("vinscrapes").expect("Couldn't get db");
         let response = kv
             .put(&self.serial_number.to_string(), &self)
             .expect("Couldn't build put options")
@@ -85,16 +172,12 @@ impl Car {
             .await;
         match response {
             Ok(_) => Ok(car_id),
-            Err(_) => Err("Failed to save to kv".into())
+            Err(_) => Err("Failed to save to kv".into()),
         }
     }
 
-    pub async fn from_pdf(
-        pdfBytes: Vec<u8>,
-        ctx: &RouteContext<()>,
-    ) -> worker::Result<Option<Car>> {
-        let pdf_text = pdf_extract::extract_text_from_mem(&pdfBytes).expect("Couldn't parse pdf");
-        console_log!("Extracted: {:?}", pdf_text);
+    pub async fn from_pdf(pdf_bytes: Vec<u8>) -> worker::Result<Option<Car>> {
+        let pdf_text = pdf_extract::extract_text_from_mem(&pdf_bytes).expect("Couldn't parse pdf");
         let model_year = "TELLURIDE";
         let model = "MODEL/OPT.CODE";
         let ext_color = "EXTERIOR COLOR";
@@ -103,7 +186,7 @@ impl Car {
         let port = "PORT OF ENTRY";
         let sold_to = "Sold To";
         let ship_to = "Ship To";
-        let model_year_index = pdf_text.find(model_year).unwrap_or(0);
+        let _model_year_index = pdf_text.find(model_year).unwrap_or(0);
         let model_index = pdf_text.find(model).unwrap_or(0);
         let ext_color_index = pdf_text.find(ext_color).unwrap_or(0);
         let int_color_index = pdf_text.find(int_color).unwrap_or(0);
@@ -117,7 +200,7 @@ impl Car {
             .split('/')
             .map(|s| s.trim())
             .collect();
-        let model_code = vin_code.get(0).unwrap_or(&"").to_string();
+        let _model_code = vin_code.get(0).unwrap_or(&"").to_string();
         let opt_code = vin_code.get(1).unwrap_or(&"").to_string();
         let ext_color_value = pdf_text[ext_color_index + ext_color.len() + 1..int_color_index]
             .trim()
@@ -136,21 +219,21 @@ impl Car {
             .trim()
             .to_string();
         let dealer_address = sold_to_value.replace(&ship_to_value, "").trim().to_string();
-        let zip = dealer_address[dealer_address.len() - 5..].to_string();
+        let _zip = dealer_address[dealer_address.len() - 5..].to_string();
         let car = Car {
             id: None,
-            vin: Vin(vin_value),
+            vin: Vin(vin_value.clone()),
             ext_color: ext_color_value,
             int_color: int_color_value,
             car_model: car_description,
             opt_code,
             ship_to: ship_to_value.clone(),
             sold_to: sold_to_value,
-            created_date: Utc::now().to_rfc2822(),
-            serial_number: SerialNumber::from_str(&ship_to_value),
+            created_date: Utc::now(),
+            serial_number: Vin(vin_value).into(),
             model_year: model_year.to_string(),
             dead_until: None,
-            last_attempt: None,
+            last_attempt: Some(Utc::now().to_string()),
         };
         Ok(Some(car))
     }
@@ -159,24 +242,29 @@ impl Car {
         serial: SerialNumber,
         ctx: &RouteContext<()>,
     ) -> Result<Option<Car>> {
+        console_debug!("Looking up {} in 'vinlookup'", serial);
         let vins = get_possible_vins_from_serial(&serial);
         let bucket = ctx.bucket("pdf_bucket").unwrap();
         for vin in vins.into_iter() {
+            console_debug!("trying {} in 'vinlookup'", vin);
             let pdf = bucket.get(&vin).execute().await;
             match pdf {
                 Ok(None) => {
+                    console_debug!("checked bucket and found nothing");
                     match vinlookup::vinlookup(&vin).await {
                         Ok(data) => {
                             if data == b"SAP API limits exceeded" {
                                 return Err("limits exceeded downstream".into());
                             }
                             let stored = bucket.put(&vin, data.clone()).execute().await;
+                            console_debug!("after stored {}", vin);
                             match stored {
                                 Ok(_) => {
-                                    let car = Car::from_pdf(data, &ctx).await;
+                                    let car = Car::from_pdf(data).await;
                                     match car {
-                                        Ok(Some(car)) => {
-                                            let carId: CarId = car.to_d1(&ctx).await?;
+                                        Ok(Some(mut car)) => {
+                                            let car_id: CarId = car.to_d1(&ctx).await?;
+                                            car.set_id(car_id);
                                             return Ok(Some(car));
                                         }
                                         _ => continue,
@@ -188,14 +276,25 @@ impl Car {
                         Err(_) => continue,
                     };
                 }
-                Ok(Some(data)) => {
-                    let body = data.body().expect("couldn't get body");
+                Ok(Some(object)) => {
+                    console_debug!("found {} in bucket with size: {:?}", vin, object.size());
+                    let body = object.body().expect("couldn't get body");
                     let bytes = body.bytes().await.expect("could not get bytes");
-                    return Err("pdf already exists".into());
+                    match Car::from_pdf(bytes).await {
+                        Ok(Some(car)) => {
+                            console_debug!("returning car we found {:?}", car);
+                            return Ok(Some(car));
+                        }
+                        Err(e) => return Err(e.into()),
+                        Ok(None) => {
+                            panic!("Parsed pdf as empty")
+                        }
+                    }
                 }
-                Err(_) => continue,
+                Err(e) => return Err(e.into()),
             }
         }
+        console_debug!("returning nothing, sadly");
         Ok(None)
     }
 }
