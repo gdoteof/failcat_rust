@@ -1,7 +1,7 @@
 use models::Car;
 use models::{highest_serial, CarId, SerialNumber};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
-use scraper::vinlookup::{self, attempt_to_scrape_from_serial, get_possible_vins_from_serial};
+use scraper::vinlookup::{self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup};
 use serde_json::json;
 use worker::*;
 
@@ -99,7 +99,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                                 }
                                 return Ok(Response::with_headers(
                                     Response::from_bytes(data).expect("couldn't get bytes"),
-                                    filePdfHeaders().into(),
+                                    file_pdf_headers(&vin).into(),
                                 ));
                             }
                             Err(_) => continue,
@@ -110,7 +110,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                         let bytes = body.bytes().await.expect("could not get bytes");
                         return Ok(Response::with_headers(
                             Response::from_bytes(bytes).expect("could not get bytes"),
-                            filePdfHeaders().into(),
+                            file_pdf_headers(&vin).into(),
                         ));
                     }
                     Err(_) => continue,
@@ -153,7 +153,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Err(e) => Response::error(e.to_string(), 500),
             }
         })
-        .get_async("/scrape:serial_number", |_, ctx| async move {
+        .get_async("/scrape/:serial_number", |_, ctx| async move {
             let serial_number = ctx
                 .param("serial_number")
                 .unwrap()
@@ -164,16 +164,31 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Err(e) => Response::error(e.to_string(), 500),
             }
         })
+        .get_async("/window-sticker/:vin.pdf", |_, ctx| async move {
+            let vin = ctx.param("vin").unwrap();
+            match vinlookup(vin).await {
+                Ok(data) => {
+                    if data == b"SAP API limits exceeded" {
+                        return Response::error("limits exceeded downstream", 429);
+                    }
+                    Ok(Response::with_headers(
+                        Response::from_bytes(data).expect("couldn't get bytes"),
+                        file_pdf_headers(&vin).into(),
+                    ))
+                }
+                Err(e) => Response::error(e.to_string(), 500),
+            }
+        })
         .run(req, env)
         .await
 }
 
-fn filePdfHeaders() -> HeaderMap {
+fn file_pdf_headers(vin: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert("Content-Type", HeaderValue::from_static("application/pdf"));
     headers.insert(
         "Content-Disposition",
-        HeaderValue::from_str("attachment; filename=\"file.pdf\"").expect("couldn't set header"),
+        HeaderValue::from_str(format!("attachment; filename=\"file.pdf\"").as_ref()).expect("couldn't set header"),
     );
     headers
 }
