@@ -313,7 +313,7 @@ impl Car {
                 }
                 Ok(Some(object)) => {
                     console_debug!("found {} in bucket with size: {:?}", vin, object.size());
-                    if object.size() == 54 {
+                    if object.size() < 100 {
                         console_debug!("found broken pdf in bucket for vin:{}", vin);
                         // VIN is broken
                         let broken_string = "BROKEN".to_string();
