@@ -1,4 +1,4 @@
-use crate::scraper::vinlookup::{self, get_possible_vins_from_serial};
+use crate::{scraper::vinlookup::{self, get_possible_vins_from_serial}, repository::PDFRepo};
 use chrono::{DateTime, Utc};
 use worker::wasm_bindgen::JsValue; // Add Fixed to imports
 
@@ -31,11 +31,11 @@ impl Car {
         opt_code: String,
         ship_to: String,
         sold_to: String,
-        created_on: DateTime<Utc>,
+        _created_on: DateTime<Utc>,
         serial_number: SerialNumber,
         model_year: String,
-        dead_until: Option<String>,
-        last_attempt: Option<String>,
+        _dead_until: Option<String>,
+        _last_attempt: Option<String>,
     ) -> Self {
         Self {
             id: None,
@@ -315,9 +315,10 @@ impl Car {
                     console_debug!("found {} in bucket with size: {:?}", vin, object.size());
                     if object.size() < 100 {
                         console_debug!("found broken pdf in bucket for vin:{}", vin);
+                        PDFRepo::new(&ctx).delete(Vin(vin.clone())).await?;
                         // VIN is broken
                         let broken_string = "BROKEN".to_string();
-                        let vin = Vin(vin);
+                    let vin = Vin(vin.clone());
                         return Ok(Some(Car::new(
                             vin.clone(),
                             broken_string.clone(),

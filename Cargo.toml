@@ -28,6 +28,7 @@ bytes = "1.4.0"
 chrono = { version = "0.4.24", features = ["serde", "wasmbind"] }
 serde = "1.0.162"
 pdf-extract = "0.6.5"
+derive_more = "0.99.17"
 
 [profile.release]
 # Tell `rustc` to optimize for small code size.

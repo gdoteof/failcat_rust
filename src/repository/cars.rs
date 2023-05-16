@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, result};
-use wasm_bindgen::JsValue;
+
+
+
 use worker::*;
 
 use crate::models::{Car, CarId};
@@ -18,7 +18,7 @@ impl CarRepository {
         }
     }
 
-    pub async fn create_car(&self, ctx: &RouteContext<()>, car: Car) -> worker::Result<(CarId)> {
+    pub async fn create_car(&self, ctx: &RouteContext<()>, car: Car) -> worker::Result<CarId> {
         Car::to_d1(&car, ctx).await
     }
 

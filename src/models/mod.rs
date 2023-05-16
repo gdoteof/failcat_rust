@@ -5,16 +5,17 @@ use std::{
 
 use chrono::Utc;
 
+use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use worker::*;
 
 pub mod car;
 pub use car::*;
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Clone, Display)]
 pub struct Vin(pub String);
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct CarId(pub i32);
+pub struct CarId(pub(crate) i32);
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SerialNumber(pub i32);
 impl Display for SerialNumber {
@@ -66,7 +67,7 @@ impl Add<i32> for SerialNumber {
 
 pub async fn highest_serial(ctx: &RouteContext<()>) -> SerialNumber {
     let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
-    let statement = d1.prepare("SELECT max(serial_number) FROM cars");
+    let statement = d1.prepare("SELECT max(serial_number) FROM cars WHERE ship_to <> 'BROKEN'");
     let rows = statement
         .first::<i32>(Some("max(serial_number)"))
         .await

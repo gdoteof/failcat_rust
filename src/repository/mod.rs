@@ -5,6 +5,8 @@ use worker::*;
 
 pub mod cars;
 pub use cars::*;
+pub mod pdfs;
+pub use pdfs::*;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct QueryOptions {
