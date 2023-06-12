@@ -173,7 +173,7 @@ pub async fn attempt_to_scrape_from_serial(
             match car {
                 Some(mut car) => {
                     console_debug!("we found a car in vinlookup: {car:?}");
-                    let car_id = match car.to_d1(ctx).await {
+                    let car_id = match car.to_d1(ctx.env.d1("failcat_db")?).await {
                         Ok(created_id) => created_id,
                         Err(e) => {
                             console_error!("We received: an error {e:?}");

@@ -1,9 +1,10 @@
+#![allow(dead_code)]
+use chrono::Utc;
+use derive_more::{Deref, Display, From};
 use std::{
     fmt::{Display, Formatter},
     ops::Add,
 };
-
-use chrono::Utc;
 
 use serde::{Deserialize, Serialize};
 use worker::*;
@@ -11,9 +12,13 @@ use worker::*;
 pub mod car;
 pub use car::*;
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[derive(
+    Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Clone, Display, From, Deref,
+)]
 pub struct Vin(pub String);
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display, From, Deref,
+)]
 pub struct CarId(pub i32);
 #[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SerialNumber(pub i32);
@@ -156,6 +161,7 @@ impl CarModel {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Dealer {
+    id: Option<i32>,
     dealer_code: String,
     address: String,
     zip: String,
@@ -163,9 +169,52 @@ pub struct Dealer {
                     // cars relationship is omitted here, but can be implemented if needed
 }
 
+pub struct DealerRepository {
+    d1: Database,
+}
+
+impl DealerRepository {
+    pub fn new(d1: Database) -> Self {
+        DealerRepository { d1 }
+    }
+
+    pub async fn get(&self, dealer_code: &str) -> worker::Result<Option<Dealer>> {
+        let statement = self
+            .d1
+            .prepare("SELECT * FROM dealers WHERE dealer_code = ?");
+        let query = statement.bind(&[dealer_code.into()])?;
+        let result = query.first::<Dealer>(None).await?;
+        Ok(result)
+    }
+
+    pub async fn create(&self, dealer: &Dealer) -> worker::Result<i32> {
+        let statement = self.d1.prepare(
+            "INSERT INTO dealers (dealer_code, address, zip, car_count) VALUES (?, ?, ?, ?)",
+        );
+        let query = statement.bind(&[
+            dealer.dealer_code.clone().into(),
+            dealer.address.clone().into(),
+            dealer.zip.clone().into(),
+            dealer.car_count.into(),
+        ])?;
+        match query.first(None).await? {
+            Some(Dealer { id, .. }) => Ok(id.unwrap()),
+            None => Err("No dealer found".into()),
+        }
+    }
+
+    pub async fn get_all(&self) -> worker::Result<Vec<Dealer>> {
+        let statement = self.d1.prepare("SELECT * FROM dealers");
+        let d1_result = statement.all().await?;
+        let result = d1_result.results::<Dealer>()?;
+        Ok(result)
+    }
+}
+
 impl Dealer {
     pub fn new(dealer_code: String, address: String, zip: String) -> Self {
         Dealer {
+            id: None,
             dealer_code,
             address,
             zip,
@@ -197,5 +246,39 @@ impl Dealer {
         ])?;
         query.first::<Self>(None).await?;
         Ok(())
+    }
+}
+
+pub struct CarRepository {
+    pub d1: Database,
+}
+
+impl CarRepository {
+    pub fn new(d1: Database) -> Self {
+        CarRepository { d1 }
+    }
+
+    pub async fn get_all_paginated(&self, page: i32, page_size: i32) -> worker::Result<Vec<Car>> {
+        console_log!("Getting cars from db");
+        let statement = self
+            .d1
+            .prepare("SELECT * FROM cars ORDER BY id DESC LIMIT ? OFFSET ? ");
+        console_log!("running the bind");
+        let query = statement.bind(&[page_size.into(), ((page - 1) * page_size).into()])?;
+        let d1_result_result = query.all().await;
+        let d1_result = d1_result_result?.results()?;
+        console_log!("extracting the results");
+        Ok(d1_result)
+    }
+
+    pub async fn get_all_paginated_id(&self, page: i32, page_size: i32) -> worker::Result<Vec<CarId>> {
+        console_log!("Getting cars from db");
+        let statement = self
+            .d1
+            .prepare("SELECT id FROM cars ORDER BY id DESC LIMIT ? OFFSET ? ");
+        console_log!("running the bind");
+        let query = statement.bind(&[page_size.to_string().into(), ((page - 1) * page_size).to_string().into()])?;
+        let d1_result_result = query.all().await?.results()?;
+        Ok(d1_result_result)
     }
 }

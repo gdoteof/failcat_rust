@@ -1,5 +1,7 @@
 #![allow(clippy::too_many_arguments)]
-use models::{Car, highest_serial, CarId, SerialNumber};
+use std::collections::HashMap;
+
+use models::{highest_serial, Car, CarId, CarRepository, DealerRepository, SerialNumber};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use scraper::vinlookup::{
     self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup,
@@ -11,9 +13,10 @@ mod scraper;
 mod utils;
 
 fn log_request(req: &Request) {
+    let time = Date::now().to_string();
     console_log!(
         "{} - [{}], located at: {:?}, within: {}",
-        Date::now().to_string(),
+        time,
         req.path(),
         req.cf().coordinates().unwrap_or_default(),
         req.cf().region().unwrap_or_else(|| "unknown region".into())
@@ -45,6 +48,50 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Ok(car) => Response::from_json(&car),
                 Err(e) => Response::error(format!("No Car Found?: {:?}", e), 404),
             }
+        })
+        .get_async("/cars/latest", |request, ctx| async move {
+            let params: HashMap<String, String> = Url::parse(&("http://whatever.com".to_owned() + &request.path()))
+                .unwrap()
+                .query_pairs()
+                .into_owned()
+                .collect();
+            let cars = CarRepository::new(ctx.env.d1("failcat_db").unwrap())
+                .get_all_paginated(
+                    params
+                        .get("pagenum")
+                        .unwrap_or(&"1".to_string())
+                        .parse::<i32>()
+                        .unwrap(),
+                    params
+                        .get("per")
+                        .unwrap_or(&"10".to_string())
+                        .parse::<i32>()
+                        .unwrap(),
+                )
+                .await?;
+            Response::from_json(&cars)
+        })
+        .get_async("/cars/latest_by_id", |request, ctx| async move {
+            let params: HashMap<String, String> = Url::parse(&("http://whatever.com".to_owned() + &request.path()))
+                .unwrap()
+                .query_pairs()
+                .into_owned()
+                .collect();
+            let cars = CarRepository::new(ctx.env.d1("failcat_db").unwrap())
+                .get_all_paginated_id(
+                    params
+                        .get("pagenum")
+                        .unwrap_or(&"1".to_string())
+                        .parse::<i32>()
+                        .unwrap(),
+                    params
+                        .get("per")
+                        .unwrap_or(&"10".to_string())
+                        .parse::<i32>()
+                        .unwrap(),
+                )
+                .await?;
+            Response::from_json(&cars)
         })
         .get_async("/vinlookup/:vin", |_, ctx| async move {
             let vin = ctx.param("vin").unwrap();
@@ -115,7 +162,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                     match car {
                         Some(car) => {
                             let car_id = car
-                                .to_d1(&ctx)
+                                .to_d1(ctx.env.d1("failcat_db")?)
                                 .await
                                 .expect("couldn't save car to database");
                             let car = car
@@ -137,7 +184,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             }
         })
         .get_async("/scrape_next/:n", |_, ctx| async move {
-            let num : i8 = ctx.param("n").unwrap().parse().unwrap();
+            let num: i8 = ctx.param("n").unwrap().parse().unwrap();
             let next_serial_number = highest_serial(&ctx).await + num.into();
             match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
                 Ok(car_id) => Response::from_json(&car_id),
@@ -169,6 +216,11 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 }
                 Err(e) => Response::error(e.to_string(), 500),
             }
+        })
+        .get_async("/dealers", |_, ctx| async move {
+            let repo = DealerRepository::new(ctx.env.d1("failcat_db")?);
+            let dealers = repo.get_all().await.expect("couldn't get dealers");
+            Response::from_json(&dealers)
         })
         .run(req, env)
         .await

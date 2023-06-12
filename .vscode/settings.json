@@ -5,5 +5,26 @@
         "REFERER",
         "reqwest",
         "vinlookup"
+    ],
+    "cSpell.enableFiletypes": [
+        "diff",
+        "dockerfile",
+        "dotenv",
+        "git-rebase",
+        "groovy",
+        "helm",
+        "hosts",
+        "ignore",
+        "jest-snapshot",
+        "jinja",
+        "julia",
+        "juliamarkdown",
+        "jvmoptions",
+        "log",
+        "lua",
+        "perl",
+        "perl6",
+        "postcss",
+        "vimrc"
     ]
 }

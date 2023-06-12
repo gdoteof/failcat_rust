@@ -15,11 +15,10 @@ pub struct Car {
     pub opt_code: String,
     pub ship_to: String,
     pub sold_to: String,
+    #[serde(with = "chrono::serde::ts_seconds")]
     pub created_date: DateTime<Utc>,
     pub serial_number: SerialNumber,
     pub model_year: String,
-    pub dead_until: Option<String>,
-    pub last_attempt: Option<String>,
 }
 
 impl Car {
@@ -49,8 +48,6 @@ impl Car {
             created_date: Utc::now(),
             serial_number,
             model_year,
-            dead_until: None,
-            last_attempt: None,
         }
     }
 
@@ -68,14 +65,10 @@ impl Car {
 
     pub async fn from_d1_serial(
         serial_number: SerialNumber,
-        ctx: &RouteContext<()>,
+        d1: Database,
     ) -> worker::Result<Option<CarId>> {
-        console_debug!("Entering from_d1_serial with:{}", serial_number);
-        let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
         let statement = d1.prepare("SELECT * FROM cars WHERE serial_number = ?");
-        console_debug!("statement prepared {:?}", statement);
         let query = statement.bind(&[serial_number.0.into()]);
-        console_debug!("query bound {:?}", query);
         match query {
             Ok(q) => {
                 console_debug!("query ok");
@@ -99,18 +92,7 @@ impl Car {
         }
     }
 
-    pub async fn to_d1(&self, ctx: &RouteContext<()>) -> worker::Result<CarId> {
-        console_debug!("attempting to write to D1 with:\n{:?}", self);
-        let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
-        let car_id = Car::from_d1_serial(self.serial_number, ctx).await;
-        match car_id {
-            Ok(Some(id)) => {
-                console_debug!("Car already exists in db with id: {:?}", id);
-                return Ok(id);
-            }
-            Ok(None) => (),
-            Err(e) => return Err(e),
-        }
+    pub async fn to_d1(&self, d1: Database) -> worker::Result<CarId> {
         let statement = d1.prepare(
             "INSERT INTO cars (vin, ext_color, int_color, car_model, opt_code, ship_to, sold_to, created_date, serial_number, model_year, dead_until, last_attempt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
         );
@@ -138,14 +120,13 @@ impl Car {
 
         let maybe_statement = statement.bind(&bind_list);
         console_debug!("bind list {:?}", bind_list);
-        console_debug!("statement bound {:?}", maybe_statement);
 
         match maybe_statement {
             Ok(statement) => {
                 console_debug!("\n\nInserting car into db with statement");
                 match statement.first::<()>(None).await {
                     Ok(None) => {
-                        let car_id = Car::from_d1_serial(self.serial_number, ctx)
+                        let car_id = Car::from_d1_serial(self.serial_number, d1)
                             .await?
                             .expect("Couldn't find car we just saved");
                         Ok(car_id)
@@ -267,8 +248,6 @@ impl Car {
             created_date: Utc::now(),
             serial_number: Vin(vin_value).into(),
             model_year: model_year.to_string(),
-            dead_until: None,
-            last_attempt: Some(Utc::now().to_string()),
         };
         Ok(Some(car))
     }
@@ -298,7 +277,7 @@ impl Car {
                                     let car = Car::from_pdf(data).await;
                                     match car {
                                         Ok(Some(mut car)) => {
-                                            let car_id: CarId = car.to_d1(ctx).await?;
+                                            let car_id: CarId = car.to_d1(ctx.env.d1("failcat_db")?).await?;
                                             car.set_id(car_id);
                                             return Ok(Some(car));
                                         }
