@@ -1,9 +1,9 @@
+#![allow(clippy::too_many_arguments)]
 use models::{Car, highest_serial, CarId, SerialNumber};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use scraper::vinlookup::{
     self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup,
 };
-use serde_json::json;
 use worker::*;
 
 mod models;
@@ -77,7 +77,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                                 }
                                 let stored = bucket.put(&vin, data.clone()).execute().await;
                                 match stored {
-                                    Ok(_) => console_log!("stored pdf"),
+                                    Ok(_) => println!("stored pdf"),
                                     Err(_) => continue,
                                 }
                                 return Ok(Response::with_headers(
@@ -131,6 +131,14 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         })
         .get_async("/scrape_next", |_, ctx| async move {
             let next_serial_number = highest_serial(&ctx).await + 1;
+            match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
+                Ok(car_id) => Response::from_json(&car_id),
+                Err(e) => Response::error(e.to_string(), 500),
+            }
+        })
+        .get_async("/scrape_next/:n", |_, ctx| async move {
+            let num : i8 = ctx.param("n").unwrap().parse().unwrap();
+            let next_serial_number = highest_serial(&ctx).await + num.into();
             match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
                 Ok(car_id) => Response::from_json(&car_id),
                 Err(e) => Response::error(e.to_string(), 500),
