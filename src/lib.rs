@@ -1,14 +1,39 @@
-use models::Car;
+
+use models::{Car};
 use models::{highest_serial, CarId, SerialNumber};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use scraper::vinlookup::{self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup};
 use serde_json::json;
 use worker::*;
+use serde::{Deserialize, Serialize};
 
 mod models;
 mod repository;
 mod scraper;
 mod utils;
+
+#[derive(Serialize, Debug, Clone, Deserialize)]
+pub struct  ScrapeRequest {
+    pub serial: SerialNumber,
+}
+
+// Consume messages from a queue
+#[event(queue)]
+pub async fn scrape_request_handler(message_batch: MessageBatch<ScrapeRequest>, env: Env, _ctx: Context) -> Result<()> {
+    let messages = message_batch.messages().expect("no messages");
+    let params = matchit::Params{ kind: None.into() };
+    messages.iter().map(|m| {
+        let ScrapeRequest {serial} = m.body;
+        let ctx = RouteContext {
+            data: (),
+            env,
+            params: params.into() ,
+        };
+        scrape_vin(serial, &ctx)
+    }).collect::<Vec<_>>();
+
+    Ok(())
+}
 
 fn log_request(req: &Request) {
     console_log!(
@@ -195,4 +220,17 @@ fn file_pdf_headers(vin: &str) -> HeaderMap {
         HeaderValue::from_static("https://failcat.vteng.io"),
     );
     headers
+}
+
+
+async fn scrape_vin(serial: SerialNumber, ctx: &RouteContext<()>) -> Result<Car> {
+    let car = Car::from_vinlookup(serial, ctx).await?;
+    match car {
+        Some(car) => {
+            let car_id = car.to_d1(ctx).await?;
+            car.to_kv(ctx, Some(car_id)).await?;
+            Ok(car)
+        }
+        None => Err("No Car Found".into()),
+    }
 }
