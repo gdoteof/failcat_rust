@@ -1,4 +1,4 @@
-use crate::scraper::vinlookup::{self, get_possible_vins_from_serial};
+use crate::{scraper::vinlookup::{self, get_possible_vins_from_serial}, common::deserialize_string_to_datetime};
 use chrono::{DateTime, Utc};
 use worker::wasm_bindgen::JsValue; // Add Fixed to imports
 
@@ -15,7 +15,7 @@ pub struct Car {
     pub opt_code: String,
     pub ship_to: String,
     pub sold_to: String,
-    #[serde(with = "chrono::serde::ts_seconds")]
+    #[serde(deserialize_with = "deserialize_string_to_datetime")]
     pub created_date: DateTime<Utc>,
     pub serial_number: SerialNumber,
     pub model_year: String,
@@ -123,7 +123,6 @@ impl Car {
 
         match maybe_statement {
             Ok(statement) => {
-                console_debug!("\n\nInserting car into db with statement");
                 match statement.first::<()>(None).await {
                     Ok(None) => {
                         let car_id = Car::from_d1_serial(self.serial_number, d1)

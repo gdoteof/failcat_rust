@@ -3,7 +3,7 @@ use chrono::Utc;
 use derive_more::{Deref, Display, From};
 use std::{
     fmt::{Display, Formatter},
-    ops::Add,
+    ops::Add, num::ParseIntError, collections::HashMap,
 };
 
 use serde::{Deserialize, Serialize};
@@ -20,7 +20,9 @@ pub struct Vin(pub String);
     Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display, From, Deref,
 )]
 pub struct CarId(pub i32);
-#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, From, Deref,
+)]
 pub struct SerialNumber(pub i32);
 impl Display for SerialNumber {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -258,27 +260,128 @@ impl CarRepository {
         CarRepository { d1 }
     }
 
-    pub async fn get_all_paginated(&self, page: i32, page_size: i32) -> worker::Result<Vec<Car>> {
-        console_log!("Getting cars from db");
-        let statement = self
-            .d1
-            .prepare("SELECT * FROM cars ORDER BY id DESC LIMIT ? OFFSET ? ");
-        console_log!("running the bind");
-        let query = statement.bind(&[page_size.into(), ((page - 1) * page_size).into()])?;
+    // pub async fn get_all_paginated_old(&self, query: CarQuery) -> worker::Result<Vec<Car>> {
+    //     let order_by = match query.order {
+    //         Id => "id",
+    //         Serial => "serial_number",
+    //     };
+    //     let statement = self
+    //         .d1
+    //         .prepare("SELECT * FROM cars ORDER BY ? DESC LIMIT ? OFFSET ? ");
+    //     let query = statement.bind(&[order_by.into(), query.page_size.into(), ((page - 1) * page_size).into()])?;
+    //     let d1_result_result = query.all().await;
+    //     let d1_result = d1_result_result?.results()?;
+    //     Ok(d1_result)
+    // }
+    pub async fn get_all_paginated(&self, query: CarQuery) -> worker::Result<Vec<Car>> {
+        let order_by = match query.order {
+            CarOrder::Id => "id",
+            CarOrder::Serial => "serial_number",
+        };
+
+        let mut sql = "SELECT * FROM cars".to_string();
+        let mut bindings = vec![];
+
+        if query.dealer.is_some()
+            || query.minimum_serial.is_some()
+            || query.maximum_serial.is_some()
+            || query.minimum_id.is_some()
+            || query.maximum_maximum.is_some()
+        {
+            sql += " WHERE ";
+
+            if let Some(dealer) = &query.dealer {
+                sql += "dealer = ? AND ";
+                bindings.push(dealer.into());
+            }
+
+            if let Some(minimum_serial) = &query.minimum_serial {
+                sql += "serial_number >= ? AND ";
+                bindings.push(minimum_serial.0.into());
+            }
+
+            if let Some(maximum_serial) = &query.maximum_serial {
+                sql += "serial_number <= ? AND ";
+                bindings.push(maximum_serial.0.into());
+            }
+
+            if let Some(minimum_id) = &query.minimum_id {
+                sql += "id >= ? AND ";
+                bindings.push(minimum_id.0.into());
+            }
+
+            if let Some(maximum_maximum) = &query.maximum_maximum {
+                sql += "id <= ? AND ";
+                bindings.push(maximum_maximum.0.into());
+            }
+
+            // Remove the trailing " AND "
+            sql = sql[0..sql.len() - 5].to_string();
+        }
+
+        sql += " ORDER BY ? DESC LIMIT ? OFFSET ?";
+        bindings.push(order_by.into());
+        bindings.push(query.per_page.into());
+        bindings.push(query.offset.into());
+
+        let statement = self.d1.prepare(&sql);
+        let query = statement.bind(&bindings)?;
         let d1_result_result = query.all().await;
         let d1_result = d1_result_result?.results()?;
-        console_log!("extracting the results");
+
         Ok(d1_result)
     }
+}
+pub struct CarQuery {
+    pub dealer: Option<String>,
+    pub per_page: i32,
+    pub offset: i32,
+    pub order: CarOrder,
+    pub minimum_serial: Option<SerialNumber>,
+    pub maximum_serial: Option<SerialNumber>,
+    pub minimum_id: Option<SerialNumber>,
+    pub maximum_maximum: Option<SerialNumber>,
+}
 
-    pub async fn get_all_paginated_id(&self, page: i32, page_size: i32) -> worker::Result<Vec<CarId>> {
-        console_log!("Getting cars from db");
-        let statement = self
-            .d1
-            .prepare("SELECT id FROM cars ORDER BY id DESC LIMIT ? OFFSET ? ");
-        console_log!("running the bind");
-        let query = statement.bind(&[page_size.to_string().into(), ((page - 1) * page_size).to_string().into()])?;
-        let d1_result_result = query.all().await?.results()?;
-        Ok(d1_result_result)
+pub enum CarOrder {
+    Id,
+    Serial,
+}
+
+#[derive(Debug)]
+pub enum CarQueryError {
+    ParseIntError(ParseIntError),
+    ParseSerialError, // Replace with the actual error type from SerialNumber::from_str
+}
+
+impl From<ParseIntError> for CarQueryError {
+    fn from(err: ParseIntError) -> CarQueryError {
+        CarQueryError::ParseIntError(err)
+    }
+}
+
+// Add similar impl block for the error type from SerialNumber::from_str
+
+impl CarQuery {
+    pub fn from_hashmap(hashmap: HashMap<String, String>) -> Result<Self> {
+        let dealer = hashmap.get("dealer").cloned();
+        let per_page = hashmap.get("per_page").map_or(Ok(10), |v| v.parse::<i32>()).unwrap();
+        let offset = hashmap.get("offset").map_or(Ok(0), |v| v.parse::<i32>()).unwrap();
+        let order = CarOrder::Id; // assuming 'id' for order by
+        let minimum_serial = hashmap.get("minimum_serial").map(|s| SerialNumber::from_str(s));
+        let maximum_serial = hashmap.get("maximum_serial").map(|s| SerialNumber::from_str(s));
+        let minimum_id = hashmap.get("minimum_id").map(|s| SerialNumber::from_str(s));
+        let maximum_maximum = hashmap.get("maximum_maximum").map(|s| SerialNumber::from_str(s));
+
+        Ok(CarQuery {
+            dealer,
+            per_page,
+            offset,
+            order,
+            minimum_serial,
+            maximum_serial,
+            minimum_id,
+            maximum_maximum,
+        })
     }
 }

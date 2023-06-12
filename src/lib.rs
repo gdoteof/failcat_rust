@@ -1,13 +1,14 @@
 #![allow(clippy::too_many_arguments)]
 use std::collections::HashMap;
 
-use models::{highest_serial, Car, CarId, CarRepository, DealerRepository, SerialNumber};
+use models::{highest_serial, Car, CarId, CarRepository, DealerRepository, SerialNumber, CarQuery};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use scraper::vinlookup::{
     self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup,
 };
 use worker::*;
 
+mod common;
 mod models;
 mod scraper;
 mod utils;
@@ -49,47 +50,16 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Err(e) => Response::error(format!("No Car Found?: {:?}", e), 404),
             }
         })
-        .get_async("/cars/latest", |request, ctx| async move {
-            let params: HashMap<String, String> = Url::parse(&("http://whatever.com".to_owned() + &request.path()))
-                .unwrap()
-                .query_pairs()
-                .into_owned()
-                .collect();
+        .get_async("/cars", |request, ctx| async move {
+            let params: HashMap<String, String> =
+                Url::parse(&("http://whatever.com".to_owned() + &request.path()))
+                    .unwrap()
+                    .query_pairs()
+                    .into_owned()
+                    .collect();
+            let car_query = CarQuery::from_hashmap(params)?;
             let cars = CarRepository::new(ctx.env.d1("failcat_db").unwrap())
-                .get_all_paginated(
-                    params
-                        .get("pagenum")
-                        .unwrap_or(&"1".to_string())
-                        .parse::<i32>()
-                        .unwrap(),
-                    params
-                        .get("per")
-                        .unwrap_or(&"10".to_string())
-                        .parse::<i32>()
-                        .unwrap(),
-                )
-                .await?;
-            Response::from_json(&cars)
-        })
-        .get_async("/cars/latest_by_id", |request, ctx| async move {
-            let params: HashMap<String, String> = Url::parse(&("http://whatever.com".to_owned() + &request.path()))
-                .unwrap()
-                .query_pairs()
-                .into_owned()
-                .collect();
-            let cars = CarRepository::new(ctx.env.d1("failcat_db").unwrap())
-                .get_all_paginated_id(
-                    params
-                        .get("pagenum")
-                        .unwrap_or(&"1".to_string())
-                        .parse::<i32>()
-                        .unwrap(),
-                    params
-                        .get("per")
-                        .unwrap_or(&"10".to_string())
-                        .parse::<i32>()
-                        .unwrap(),
-                )
+                .get_all_paginated(car_query)
                 .await?;
             Response::from_json(&cars)
         })
