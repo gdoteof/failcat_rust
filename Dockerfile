@@ -1,0 +1,2 @@
+from rust
+CMD cargo

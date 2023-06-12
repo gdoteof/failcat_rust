@@ -1,12 +1,12 @@
-use models::Car;
-use models::{highest_serial, CarId, SerialNumber};
+use models::{Car, highest_serial, CarId, SerialNumber};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
-use scraper::vinlookup::{self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup};
+use scraper::vinlookup::{
+    self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup,
+};
 use serde_json::json;
 use worker::*;
 
 mod models;
-mod repository;
 mod scraper;
 mod utils;
 
@@ -188,7 +188,10 @@ fn file_pdf_headers(vin: &str) -> HeaderMap {
     headers.insert("Content-Type", HeaderValue::from_static("application/pdf"));
     headers.insert(
         "Content-Disposition",
-        HeaderValue::from_str(format!("attachment; filename=\"window-sticker-{vin}.pdf\"").as_ref()).expect("couldn't set header"),
+        HeaderValue::from_str(
+            format!("attachment; filename=\"window-sticker-{vin}.pdf\"").as_ref(),
+        )
+        .expect("couldn't set header"),
     );
     headers.insert(
         "Access-Control-Allow-Origin",
