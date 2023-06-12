@@ -310,9 +310,9 @@ impl CarRepository {
                 bindings.push(minimum_id.0.into());
             }
 
-            if let Some(maximum_maximum) = &query.maximum_maximum {
+            if let Some(maximum_id) = &query.maximum_maximum {
                 sql += "id <= ? AND ";
-                bindings.push(maximum_maximum.0.into());
+                bindings.push(maximum_id.0.into());
             }
 
             // Remove the trailing " AND "
@@ -324,6 +324,8 @@ impl CarRepository {
         bindings.push(query.per_page.into());
         bindings.push(query.offset.into());
 
+        console_debug!("SQL: {}", sql);
+        console_debug!("Bindings: {:?}", bindings);
         let statement = self.d1.prepare(&sql);
         let query = statement.bind(&bindings)?;
         let d1_result_result = query.all().await;
@@ -367,7 +369,7 @@ impl CarQuery {
         let dealer = hashmap.get("dealer").cloned();
         let per_page = hashmap.get("per_page").map_or(Ok(10), |v| v.parse::<i32>()).unwrap();
         let offset = hashmap.get("offset").map_or(Ok(0), |v| v.parse::<i32>()).unwrap();
-        let order = CarOrder::Id; // assuming 'id' for order by
+        let order = CarOrder::Serial; // assuming 'id' for order by
         let minimum_serial = hashmap.get("minimum_serial").map(|s| SerialNumber::from_str(s));
         let maximum_serial = hashmap.get("maximum_serial").map(|s| SerialNumber::from_str(s));
         let minimum_id = hashmap.get("minimum_id").map(|s| SerialNumber::from_str(s));
