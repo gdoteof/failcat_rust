@@ -334,6 +334,7 @@ impl CarRepository {
         Ok(d1_result)
     }
 }
+#[derive(Debug)]
 pub struct CarQuery {
     pub dealer: Option<String>,
     pub per_page: i32,
@@ -345,6 +346,7 @@ pub struct CarQuery {
     pub maximum_maximum: Option<SerialNumber>,
 }
 
+#[derive(Debug)]
 pub enum CarOrder {
     Id,
     Serial,
@@ -369,13 +371,14 @@ impl CarQuery {
         let dealer = hashmap.get("dealer").cloned();
         let per_page = hashmap.get("per_page").map_or(Ok(10), |v| v.parse::<i32>()).unwrap();
         let offset = hashmap.get("offset").map_or(Ok(0), |v| v.parse::<i32>()).unwrap();
-        let order = CarOrder::Serial; // assuming 'id' for order by
+        let order = CarOrder::Serial;
         let minimum_serial = hashmap.get("minimum_serial").map(|s| SerialNumber::from_str(s));
         let maximum_serial = hashmap.get("maximum_serial").map(|s| SerialNumber::from_str(s));
         let minimum_id = hashmap.get("minimum_id").map(|s| SerialNumber::from_str(s));
         let maximum_maximum = hashmap.get("maximum_maximum").map(|s| SerialNumber::from_str(s));
 
-        Ok(CarQuery {
+
+        let result = Ok(CarQuery {
             dealer,
             per_page,
             offset,
@@ -384,6 +387,9 @@ impl CarQuery {
             maximum_serial,
             minimum_id,
             maximum_maximum,
-        })
+        });
+
+        console_debug!("result: {:?}", result);
+        result
     }
 }
