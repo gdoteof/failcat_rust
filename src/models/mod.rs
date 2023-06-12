@@ -19,7 +19,7 @@ pub struct CarId(pub i32);
 pub struct SerialNumber(pub i32);
 impl Display for SerialNumber {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0.to_string())
+        write!(f, "{}", self.0)
     }
 }
 
@@ -31,7 +31,7 @@ impl SerialNumber {
                 .last()
                 .unwrap()
                 .parse::<i32>()
-                .expect(format!("Could not parse ->>{}<<-", serial).as_str()),
+                .unwrap_or_else(|_| panic!("Could not parse ->>{}<<-", serial)),
         )
     }
 }
@@ -71,10 +71,10 @@ pub async fn highest_serial(ctx: &RouteContext<()>) -> SerialNumber {
         .first::<i32>(Some("max(serial_number)"))
         .await
         .expect("Couldn't get rows");
-    return match rows {
+    match rows {
         Some(row) => SerialNumber(row),
         None => SerialNumber(0),
-    };
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -120,10 +120,10 @@ impl ScraperLog {
             self.run_type.clone().into(),
             self.success.into(),
         ])?;
-        return match query.first(None).await? {
+        match query.first(None).await? {
             Some(ScraperLog { id, .. }) => Ok(id.unwrap()),
             None => Err("No scraper log found".into()),
-        };
+        }
     }
 }
 

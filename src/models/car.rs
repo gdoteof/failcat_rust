@@ -31,11 +31,11 @@ impl Car {
         opt_code: String,
         ship_to: String,
         sold_to: String,
-        created_on: DateTime<Utc>,
+        _created_on: DateTime<Utc>,
         serial_number: SerialNumber,
         model_year: String,
-        dead_until: Option<String>,
-        last_attempt: Option<String>,
+        _dead_until: Option<String>,
+        _last_attempt: Option<String>,
     ) -> Self {
         Self {
             id: None,
@@ -76,7 +76,7 @@ impl Car {
         console_debug!("statement prepared {:?}", statement);
         let query = statement.bind(&[serial_number.0.into()]);
         console_debug!("query bound {:?}", query);
-        return match query {
+        match query {
             Ok(q) => {
                 console_debug!("query ok");
                 let result = q.first::<CarId>("id".into()).await;
@@ -96,13 +96,13 @@ impl Car {
                 console_debug!("query error: {:?}", e);
                 Err(e)
             }
-        };
+        }
     }
 
     pub async fn to_d1(&self, ctx: &RouteContext<()>) -> worker::Result<CarId> {
         console_debug!("attempting to write to D1 with:\n{:?}", self);
         let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
-        let car_id = Car::from_d1_serial(self.serial_number.clone(), ctx).await;
+        let car_id = Car::from_d1_serial(self.serial_number, ctx).await;
         match car_id {
             Ok(Some(id)) => {
                 console_debug!("Car already exists in db with id: {:?}", id);
@@ -143,9 +143,9 @@ impl Car {
         match maybe_statement {
             Ok(statement) => {
                 console_debug!("\n\nInserting car into db with statement");
-                return match statement.first::<()>(None).await {
+                match statement.first::<()>(None).await {
                     Ok(None) => {
-                        let car_id = Car::from_d1_serial(self.serial_number.clone(), ctx)
+                        let car_id = Car::from_d1_serial(self.serial_number, ctx)
                             .await?
                             .expect("Couldn't find car we just saved");
                         Ok(car_id)
@@ -156,11 +156,11 @@ impl Car {
                     )
                     .into()),
                     Err(e) => Err(format!("\n\nError inserting car into db: {:?}", e).into()),
-                };
+                }
             }
             Err(e) => {
                 console_debug!("\n\nActually binding failed with: {:?}", e);
-                return Err(e);
+                Err(e)
             }
         }
     }
@@ -201,7 +201,7 @@ impl Car {
 
         let kv = ctx.env.kv("vinscrapes").expect("Couldn't get db");
         let response = kv
-            .put(&self.serial_number.to_string(), &self)
+            .put(&self.serial_number.to_string(), self)
             .expect("Couldn't build put options")
             .execute()
             .await;
@@ -235,7 +235,7 @@ impl Car {
             .split('/')
             .map(|s| s.trim())
             .collect();
-        let _model_code = vin_code.get(0).unwrap_or(&"").to_string();
+        let _model_code = vin_code.first().unwrap_or(&"").to_string();
         let opt_code = vin_code.get(1).unwrap_or(&"").to_string();
         let ext_color_value = pdf_text[ext_color_index + ext_color.len() + 1..int_color_index]
             .trim()
@@ -262,7 +262,7 @@ impl Car {
             int_color: int_color_value,
             car_model: car_description,
             opt_code,
-            ship_to: ship_to_value.clone(),
+            ship_to: ship_to_value,
             sold_to: sold_to_value[..5].to_string(),
             created_date: Utc::now(),
             serial_number: Vin(vin_value).into(),
@@ -298,7 +298,7 @@ impl Car {
                                     let car = Car::from_pdf(data).await;
                                     match car {
                                         Ok(Some(mut car)) => {
-                                            let car_id: CarId = car.to_d1(&ctx).await?;
+                                            let car_id: CarId = car.to_d1(ctx).await?;
                                             car.set_id(car_id);
                                             return Ok(Some(car));
                                         }
@@ -340,13 +340,13 @@ impl Car {
                             console_debug!("returning car we found {:?}", car);
                             return Ok(Some(car));
                         }
-                        Err(e) => return Err(e.into()),
+                        Err(e) => return Err(e),
                         Ok(None) => {
                             panic!("Parsed pdf as empty")
                         }
                     }
                 }
-                Err(e) => return Err(e.into()),
+                Err(e) => return Err(e),
             }
         }
         console_debug!("returning nothing, sadly");

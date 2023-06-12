@@ -139,9 +139,9 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                                 .to_kv(&ctx, Some(car_id))
                                 .await
                                 .expect("couldn't save car to database");
-                            return Response::from_json(&car);
+                            Response::from_json(&car)
                         }
-                        None => return Response::error("No Car Found", 404),
+                        None => Response::error("No Car Found", 404),
                     }
                 }
             }
@@ -173,7 +173,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                     }
                     Ok(Response::with_headers(
                         Response::from_bytes(data).expect("couldn't get bytes"),
-                        file_pdf_headers(&vin).into(),
+                        file_pdf_headers(vin).into(),
                     ))
                 }
                 Err(e) => Response::error(e.to_string(), 500),
