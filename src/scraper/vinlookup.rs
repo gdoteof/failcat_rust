@@ -106,13 +106,13 @@ static YEAR_VIN_VALUES: Map<&'static str, char> = phf_map! {
     "2024" => 'R',
 };
 
-struct VinYear {
-    year: u32,
-    vin_char: char,
+pub struct VinYear {
+    pub year: u32,
+    pub vin_char: char,
 }
 
 impl VinYear {
-    fn from_serial(serial: SerialNumber) -> Self {
+    pub fn from_serial(serial: SerialNumber) -> Self {
         let (year, vin_char) = if serial > 411975.into() {
             (2024, YEAR_VIN_VALUES["2024"])
         } else {
