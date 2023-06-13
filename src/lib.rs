@@ -219,7 +219,7 @@ fn handle_cors(req: &Request, res: Response) -> Response {
         .get("Origin")
         .unwrap_or_default()
         .unwrap_or_default();
-    if origin.contains("vteng.io") {
+    if origin.contains("vteng.io") || origin.contains("localhost"){
         let mut headers = Headers::new();
         let _ = headers.set("Access-Control-Allow-Origin", &origin);
         let _ = headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
