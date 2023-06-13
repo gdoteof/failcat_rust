@@ -1,4 +1,4 @@
-use crate::{scraper::vinlookup::{self, get_possible_vins_from_serial}, common::deserialize_string_to_datetime};
+use crate::{scraper::vinlookup::{self, get_possible_vins_from_serial, VinYear}, common::deserialize_string_to_datetime};
 use chrono::{DateTime, Utc};
 use worker::wasm_bindgen::JsValue; // Add Fixed to imports
 
@@ -65,7 +65,7 @@ impl Car {
 
     pub async fn from_d1_serial(
         serial_number: SerialNumber,
-        d1: Database,
+        d1: &Database,
     ) -> worker::Result<Option<CarId>> {
         let statement = d1.prepare("SELECT * FROM cars WHERE serial_number = ?");
         let query = statement.bind(&[serial_number.0.into()]);
@@ -93,6 +93,12 @@ impl Car {
     }
 
     pub async fn to_d1(&self, d1: Database) -> worker::Result<CarId> {
+        let serial_number = self.serial_number;
+        let maybe_car = Car::from_d1_serial(serial_number, &d1).await?;
+        if let Some(car) = maybe_car {
+            return Ok(car);
+        }
+
         let statement = d1.prepare(
             "INSERT INTO cars (vin, ext_color, int_color, car_model, opt_code, ship_to, sold_to, created_date, serial_number, model_year, dead_until, last_attempt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
         );
@@ -125,7 +131,7 @@ impl Car {
             Ok(statement) => {
                 match statement.first::<()>(None).await {
                     Ok(None) => {
-                        let car_id = Car::from_d1_serial(self.serial_number, d1)
+                        let car_id = Car::from_d1_serial(self.serial_number, &d1)
                             .await?
                             .expect("Couldn't find car we just saved");
                         Ok(car_id)
@@ -193,7 +199,6 @@ impl Car {
 
     pub async fn from_pdf(pdf_bytes: Vec<u8>) -> worker::Result<Option<Car>> {
         let pdf_text = pdf_extract::extract_text_from_mem(&pdf_bytes).expect("Couldn't parse pdf");
-        let model_year = "2023";
         let model = "MODEL/OPT.CODE";
         let ext_color = "EXTERIOR COLOR";
         let int_color = "INTERIOR COLOR";
@@ -201,7 +206,6 @@ impl Car {
         let port = "PORT OF ENTRY";
         let sold_to = "Sold To";
         let ship_to = "Ship To";
-        let _model_year_index = pdf_text.find(model_year).unwrap_or(0);
         let model_index = pdf_text.find(model).unwrap_or(0);
         let ext_color_index = pdf_text.find(ext_color).unwrap_or(0);
         let int_color_index = pdf_text.find(int_color).unwrap_or(0);
@@ -235,9 +239,10 @@ impl Car {
             .to_string();
         let dealer_address = sold_to_value.replace(&ship_to_value, "").trim().to_string();
         let _zip = dealer_address[dealer_address.len() - 5..].to_string();
+        let serial_number : SerialNumber = Vin(vin_value.clone()).into();
         let car = Car {
             id: None,
-            vin: Vin(vin_value.clone()),
+            vin: Vin(vin_value),
             ext_color: ext_color_value,
             int_color: int_color_value,
             car_model: car_description,
@@ -245,8 +250,8 @@ impl Car {
             ship_to: ship_to_value,
             sold_to: sold_to_value[..5].to_string(),
             created_date: Utc::now(),
-            serial_number: Vin(vin_value).into(),
-            model_year: model_year.to_string(),
+            serial_number,
+            model_year: VinYear::from_serial(serial_number).year.to_string(),
         };
         Ok(Some(car))
     }

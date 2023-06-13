@@ -1,4 +1,3 @@
-
 use chrono::Utc;
 use reqwest_wasm::header::{
     HeaderMap, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, CACHE_CONTROL, DNT, ORIGIN, REFERER,
@@ -102,12 +101,38 @@ static VIN_DIGIT_VALUES: Map<&'static str, u32> = phf_map! {
     "0" =>  0,
 };
 
-const VIN_YEAR: char = 'P';
+static YEAR_VIN_VALUES: Map<&'static str, char> = phf_map! {
+    "2023" => 'P',
+    "2024" => 'R',
+};
+
+pub struct VinYear {
+    pub year: u32,
+    pub vin_char: char,
+}
+
+impl VinYear {
+    pub fn from_serial(serial: SerialNumber) -> Self {
+        let (year, vin_char) = if serial > 411975.into() {
+            (2024, YEAR_VIN_VALUES["2024"])
+        } else {
+            (2023, YEAR_VIN_VALUES["2023"])
+        };
+        Self { year, vin_char }
+    }
+}
+
 pub fn get_possible_vins_from_serial(serial: &SerialNumber) -> Vec<String> {
     let vin_starts = get_possible_vins_starts();
     iproduct!(vin_starts, VIN_DIGIT_VALUES.keys())
         .map(|(vin_start, vin_char)| {
-            format!("{}{}{}G{:0>6}", vin_start, vin_char, VIN_YEAR, serial)
+            format!(
+                "{}{}{}G{:0>6}",
+                vin_start,
+                vin_char,
+                VinYear::from_serial(*serial).vin_char,
+                serial
+            )
         })
         .map(|vin| format!("{}{}{}", &vin[0..8], get_check_sum_char(&vin), &vin[9..]))
         .collect_vec()
