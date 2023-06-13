@@ -20,6 +20,20 @@ pub struct Vin(pub String);
     Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display, From, Deref,
 )]
 pub struct CarId(pub i32);
+
+#[serde(rename_all = "lowercase")]
+#[derive(Serialize, Deserialize, Debug, Default)]
+pub enum CarOrder {
+    Id,
+    #[default]
+    Serial,
+}
+
+#[derive(Debug)]
+pub enum CarQueryError {
+    ParseIntError(ParseIntError),
+    ParseSerialError, // Replace with the actual error type from SerialNumber::from_str
+}
 #[derive(
     Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, From, Deref,
 )]
@@ -274,12 +288,6 @@ impl CarRepository {
     //     Ok(d1_result)
     // }
     pub async fn get_all_paginated(&self, query: CarQuery) -> worker::Result<Vec<Car>> {
-        let order_by = match query.order {
-            Some(CarOrder::Id) => "id desc",
-            Some(CarOrder::Serial) => "serial_number desc",
-            None => "serial_number desc",
-        };
-
         let mut sql = "SELECT * FROM cars".to_string();
         let mut bindings = vec![];
 
@@ -319,10 +327,13 @@ impl CarRepository {
             // Remove the trailing " AND "
             sql = sql[0..sql.len() - 5].to_string();
         }
+        // Strange bug(?) where the order by clause is not working with the prepared statement
+        sql += match query.order {
+            Some(CarOrder::Id) => " ORDER BY id DESC LIMIT ? OFFSET ?",
+            _ => " ORDER BY serial_number DESC LIMIT ? OFFSET ?",
+        };
 
-        sql += " ORDER BY ? LIMIT ? OFFSET ?";
-        bindings.push(order_by.into());
-        bindings.push(query.per.unwrap_or(10).into());
+        bindings.push(query.perpage.unwrap_or(10).into());
         bindings.push(query.offset.unwrap_or(0).into());
 
         console_debug!("SQL: {}", sql);
@@ -338,7 +349,7 @@ impl CarRepository {
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CarQuery {
     pub dealer: Option<String>,
-    pub per: Option<i32>,
+    pub perpage: Option<i32>,
     pub offset: Option<i32>, 
     pub order: Option<CarOrder>,
     pub minimum_serial: Option<SerialNumber>,
@@ -347,19 +358,6 @@ pub struct CarQuery {
     pub maximum_maximum: Option<SerialNumber>,
 }
 
-#[serde(rename_all = "lowercase")]
-#[derive(Serialize, Deserialize, Debug, Default)]
-pub enum CarOrder {
-    Id,
-    #[default]
-    Serial,
-}
-
-#[derive(Debug)]
-pub enum CarQueryError {
-    ParseIntError(ParseIntError),
-    ParseSerialError, // Replace with the actual error type from SerialNumber::from_str
-}
 
 impl From<ParseIntError> for CarQueryError {
     fn from(err: ParseIntError) -> CarQueryError {
