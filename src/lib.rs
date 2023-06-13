@@ -206,10 +206,6 @@ fn file_pdf_headers(vin: &str) -> HeaderMap {
         )
         .expect("couldn't set header"),
     );
-    headers.insert(
-        "Access-Control-Allow-Origin",
-        HeaderValue::from_static("https://failcat.vteng.io"),
-    );
     headers
 }
 
@@ -219,12 +215,21 @@ fn handle_cors(req: &Request, res: Response) -> Response {
         .get("Origin")
         .unwrap_or_default()
         .unwrap_or_default();
-    if origin.contains("vteng.io") || origin.contains("localhost"){
-        let mut headers = Headers::new();
-        let _ = headers.set("Access-Control-Allow-Origin", &origin);
-        let _ = headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        let _ = headers.set("Access-Control-Allow-Headers", "Content-Type");
-        res.with_headers(headers)
+    if origin.contains("vteng.io") || origin.contains("localhost") {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "Access-Control-Allow-Origin",
+            HeaderValue::from_str(&origin).unwrap(),
+        );
+        headers.insert(
+            "Access-Control-Allow-Methods",
+            HeaderValue::from_static("GET, POST, OPTIONS"),
+        );
+        headers.insert(
+            "Access-Control-Allow-Headers",
+            HeaderValue::from_static("Content-Type"),
+        );
+        res.with_headers(headers.into())
     } else {
         res
     }
