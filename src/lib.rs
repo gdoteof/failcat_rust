@@ -1,6 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
-use models::{highest_serial, Car, CarId, CarRepository, DealerRepository, SerialNumber, CarQuery};
+use models::{highest_serial, Car, CarId, CarQuery, CarRepository, DealerRepository, SerialNumber};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use scraper::vinlookup::{
     self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup,
@@ -31,7 +31,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
 
     let router = Router::new();
 
-    router
+    let response = router
         .get("/", |_, _| Response::ok("Hello from Workers!"))
         .get("/worker-version", |_, ctx| {
             let version = ctx.var("WORKERS_RS_VERSION")?.to_string();
@@ -191,8 +191,9 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let dealers = repo.get_all().await.expect("couldn't get dealers");
             Response::from_json(&dealers)
         })
-        .run(req, env)
-        .await
+        .run(req.clone()?, env)
+        .await?;
+    Ok(handle_cors(&req, response))
 }
 
 fn file_pdf_headers(vin: &str) -> HeaderMap {
@@ -210,4 +211,21 @@ fn file_pdf_headers(vin: &str) -> HeaderMap {
         HeaderValue::from_static("https://failcat.vteng.io"),
     );
     headers
+}
+
+fn handle_cors(req: &Request, res: Response) -> Response {
+    let origin = req
+        .headers()
+        .get("Origin")
+        .unwrap_or_default()
+        .unwrap_or_default();
+    if origin.contains("vteng.io") {
+        let mut headers = Headers::new();
+        let _ = headers.set("Access-Control-Allow-Origin", &origin);
+        let _ = headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        let _ = headers.set("Access-Control-Allow-Headers", "Content-Type");
+        res.with_headers(headers)
+    } else {
+        res
+    }
 }
