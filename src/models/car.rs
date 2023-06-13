@@ -65,7 +65,7 @@ impl Car {
 
     pub async fn from_d1_serial(
         serial_number: SerialNumber,
-        d1: Database,
+        d1: &Database,
     ) -> worker::Result<Option<CarId>> {
         let statement = d1.prepare("SELECT * FROM cars WHERE serial_number = ?");
         let query = statement.bind(&[serial_number.0.into()]);
@@ -93,6 +93,12 @@ impl Car {
     }
 
     pub async fn to_d1(&self, d1: Database) -> worker::Result<CarId> {
+        let serial_number = self.serial_number;
+        let maybe_car = Car::from_d1_serial(serial_number, &d1).await?;
+        if let Some(car) = maybe_car {
+            return Ok(car);
+        }
+
         let statement = d1.prepare(
             "INSERT INTO cars (vin, ext_color, int_color, car_model, opt_code, ship_to, sold_to, created_date, serial_number, model_year, dead_until, last_attempt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
         );
@@ -125,7 +131,7 @@ impl Car {
             Ok(statement) => {
                 match statement.first::<()>(None).await {
                     Ok(None) => {
-                        let car_id = Car::from_d1_serial(self.serial_number, d1)
+                        let car_id = Car::from_d1_serial(self.serial_number, &d1)
                             .await?
                             .expect("Couldn't find car we just saved");
                         Ok(car_id)
@@ -236,7 +242,7 @@ impl Car {
         let serial_number : SerialNumber = Vin(vin_value.clone()).into();
         let car = Car {
             id: None,
-            vin: Vin(vin_value.clone()),
+            vin: Vin(vin_value),
             ext_color: ext_color_value,
             int_color: int_color_value,
             car_model: car_description,
