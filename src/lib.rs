@@ -1,5 +1,4 @@
 #![allow(clippy::too_many_arguments)]
-use std::collections::HashMap;
 
 use models::{highest_serial, Car, CarId, CarRepository, DealerRepository, SerialNumber, CarQuery};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
@@ -51,13 +50,10 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             }
         })
         .get_async("/cars", |request, ctx| async move {
-            let params: HashMap<String, String> =
-                Url::parse(&("http://whatever.com".to_owned() + &request.path()))
-                    .unwrap()
-                    .query_pairs()
-                    .into_owned()
-                    .collect();
-            let car_query = CarQuery::from_hashmap(params)?;
+            let url = request.url().unwrap();
+            let query_str = url.query().unwrap_or_default();
+            let car_query = serde_qs::from_str::<CarQuery>(query_str).unwrap_or_default();
+
             let cars = CarRepository::new(ctx.env.d1("failcat_db").unwrap())
                 .get_all_paginated(car_query)
                 .await?;

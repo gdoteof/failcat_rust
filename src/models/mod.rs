@@ -334,7 +334,7 @@ impl CarRepository {
         Ok(d1_result)
     }
 }
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CarQuery {
     pub dealer: Option<String>,
     pub per_page: i32,
@@ -346,9 +346,10 @@ pub struct CarQuery {
     pub maximum_maximum: Option<SerialNumber>,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub enum CarOrder {
     Id,
+    #[default]
     Serial,
 }
 
@@ -367,16 +368,15 @@ impl From<ParseIntError> for CarQueryError {
 // Add similar impl block for the error type from SerialNumber::from_str
 
 impl CarQuery {
-    pub fn from_hashmap(hashmap: HashMap<String, String>) -> Result<Self> {
-        let dealer = hashmap.get("dealer").cloned();
-        let per_page = hashmap.get("per_page").map_or(Ok(10), |v| v.parse::<i32>()).unwrap();
-        let offset = hashmap.get("offset").map_or(Ok(0), |v| v.parse::<i32>()).unwrap();
+    pub fn from_context(ctx: &RouteContext<()>) -> Result<Self> {
+        let dealer = ctx.param("dealer").cloned();
+        let per_page = ctx.param("per_page").map_or(Ok(10), |v| v.parse::<i32>()).unwrap();
+        let offset = ctx.param("offset").map_or(Ok(0), |v| v.parse::<i32>()).unwrap();
         let order = CarOrder::Serial;
-        let minimum_serial = hashmap.get("minimum_serial").map(|s| SerialNumber::from_str(s));
-        let maximum_serial = hashmap.get("maximum_serial").map(|s| SerialNumber::from_str(s));
-        let minimum_id = hashmap.get("minimum_id").map(|s| SerialNumber::from_str(s));
-        let maximum_maximum = hashmap.get("maximum_maximum").map(|s| SerialNumber::from_str(s));
-
+        let minimum_serial = ctx.param("minimum_serial").map(|s| SerialNumber::from_str(s));
+        let maximum_serial = ctx.param("maximum_serial").map(|s| SerialNumber::from_str(s));
+        let minimum_id = ctx.param("minimum_id").map(|s| SerialNumber::from_str(s));
+        let maximum_maximum = ctx.param("maximum_maximum").map(|s| SerialNumber::from_str(s));
 
         let result = Ok(CarQuery {
             dealer,
