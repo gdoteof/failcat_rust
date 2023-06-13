@@ -51,8 +51,11 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         })
         .get_async("/cars", |request, ctx| async move {
             let url = request.url().unwrap();
+            console_log!("url: {:?}", url);
             let query_str = url.query().unwrap_or_default();
-            let car_query = serde_qs::from_str::<CarQuery>(query_str).unwrap_or_default();
+            console_log!("query_str: {:?}", query_str);
+            let car_query = serde_qs::from_str::<CarQuery>(query_str).unwrap();
+            console_log!("car_query: {:?}", car_query);
 
             let cars = CarRepository::new(ctx.env.d1("failcat_db").unwrap())
                 .get_all_paginated(car_query)

@@ -3,7 +3,7 @@ use chrono::Utc;
 use derive_more::{Deref, Display, From};
 use std::{
     fmt::{Display, Formatter},
-    ops::Add, num::ParseIntError, collections::HashMap,
+    ops::Add, num::ParseIntError,
 };
 
 use serde::{Deserialize, Serialize};
@@ -275,8 +275,9 @@ impl CarRepository {
     // }
     pub async fn get_all_paginated(&self, query: CarQuery) -> worker::Result<Vec<Car>> {
         let order_by = match query.order {
-            CarOrder::Id => "id",
-            CarOrder::Serial => "serial_number",
+            Some(CarOrder::Id) => "id desc",
+            Some(CarOrder::Serial) => "serial_number desc",
+            None => "serial_number desc",
         };
 
         let mut sql = "SELECT * FROM cars".to_string();
@@ -319,10 +320,10 @@ impl CarRepository {
             sql = sql[0..sql.len() - 5].to_string();
         }
 
-        sql += " ORDER BY ? DESC LIMIT ? OFFSET ?";
+        sql += " ORDER BY ? LIMIT ? OFFSET ?";
         bindings.push(order_by.into());
-        bindings.push(query.per_page.into());
-        bindings.push(query.offset.into());
+        bindings.push(query.per.unwrap_or(10).into());
+        bindings.push(query.offset.unwrap_or(0).into());
 
         console_debug!("SQL: {}", sql);
         console_debug!("Bindings: {:?}", bindings);
@@ -334,18 +335,19 @@ impl CarRepository {
         Ok(d1_result)
     }
 }
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct CarQuery {
     pub dealer: Option<String>,
-    pub per_page: i32,
-    pub offset: i32,
-    pub order: CarOrder,
+    pub per: Option<i32>,
+    pub offset: Option<i32>, 
+    pub order: Option<CarOrder>,
     pub minimum_serial: Option<SerialNumber>,
     pub maximum_serial: Option<SerialNumber>,
     pub minimum_id: Option<SerialNumber>,
     pub maximum_maximum: Option<SerialNumber>,
 }
 
+#[serde(rename_all = "lowercase")]
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub enum CarOrder {
     Id,
@@ -365,31 +367,5 @@ impl From<ParseIntError> for CarQueryError {
     }
 }
 
-// Add similar impl block for the error type from SerialNumber::from_str
 
-impl CarQuery {
-    pub fn from_context(ctx: &RouteContext<()>) -> Result<Self> {
-        let dealer = ctx.param("dealer").cloned();
-        let per_page = ctx.param("per_page").map_or(Ok(10), |v| v.parse::<i32>()).unwrap();
-        let offset = ctx.param("offset").map_or(Ok(0), |v| v.parse::<i32>()).unwrap();
-        let order = CarOrder::Serial;
-        let minimum_serial = ctx.param("minimum_serial").map(|s| SerialNumber::from_str(s));
-        let maximum_serial = ctx.param("maximum_serial").map(|s| SerialNumber::from_str(s));
-        let minimum_id = ctx.param("minimum_id").map(|s| SerialNumber::from_str(s));
-        let maximum_maximum = ctx.param("maximum_maximum").map(|s| SerialNumber::from_str(s));
 
-        let result = Ok(CarQuery {
-            dealer,
-            per_page,
-            offset,
-            order,
-            minimum_serial,
-            maximum_serial,
-            minimum_id,
-            maximum_maximum,
-        });
-
-        console_debug!("result: {:?}", result);
-        result
-    }
-}
