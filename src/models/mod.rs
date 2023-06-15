@@ -2,8 +2,7 @@
 use chrono::Utc;
 use derive_more::{Deref, Display, From};
 use std::{
-    fmt::{Display, Formatter},
-    ops::Add, num::ParseIntError,
+    num::ParseIntError,
 };
 
 use serde::{Deserialize, Serialize};
@@ -46,83 +45,6 @@ pub enum CarQueryError {
 
 
 
-#[derive(
-    Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, From, Deref,
-)]
-pub struct SerialNumber(pub i32);
-impl Display for SerialNumber {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-
-
-
-impl SerialNumber {
-    pub async fn find_first_unknown_below(ctx: &RouteContext<()>, start: i32) -> Result<Option<SerialNumber>> {
-        let d1 = ctx.env.d1("failcat_db")?;
-        let mut current = start;
-        loop {
-            let statement = d1.prepare(&format!("SELECT * FROM cars WHERE serial_number = {}", current));
-            let rows = statement
-                .first::<i32>(Some("serial_number"))
-                .await?;
-            
-            if rows.is_none() {
-                return Ok(Some(SerialNumber(current)));
-            }
-
-            if current == 0 {
-                break;
-            }
-
-            current -= 1;
-        }
-        Ok(None)
-    }
-}
-
-impl From<Vin> for SerialNumber {
-    fn from(vin: Vin) -> Self {
-        // SerialNumber is last 6 digits (0 padded) of Vin
-        SerialNumber::from(&vin.0[11..].into())
-    }
-}
-
-impl From<&std::string::String> for SerialNumber {
-    fn from(serial: &std::string::String) -> Self {
-        SerialNumber(
-            serial
-                .split_whitespace()
-                .last()
-                .unwrap()
-                .parse::<i32>()
-                .expect("Could not parse"),
-        )
-    }
-}
-
-impl Add<i32> for SerialNumber {
-    type Output = Self;
-
-    fn add(self, rhs: i32) -> Self::Output {
-        SerialNumber(self.0 + rhs)
-    }
-}
-
-pub async fn highest_serial(ctx: &RouteContext<()>) -> SerialNumber {
-    let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
-    let statement = d1.prepare("SELECT max(serial_number) FROM cars");
-    let rows = statement
-        .first::<i32>(Some("max(serial_number)"))
-        .await
-        .expect("Couldn't get rows");
-    match rows {
-        Some(row) => SerialNumber(row),
-        None => SerialNumber(0),
-    }
-}
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ScraperLog {

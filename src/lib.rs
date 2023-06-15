@@ -1,5 +1,6 @@
 #![allow(clippy::too_many_arguments)]
 
+use common::ScrapeResponse;
 use models::{highest_serial, Car, CarId, CarQuery, CarRepository, DealerRepository, SerialNumber};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use scraper::vinlookup::{
@@ -146,15 +147,15 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             }
         })
         .get_async("/scrape_next", |_, ctx| async move {
-            let next_serial_number = highest_serial(&ctx).await + 1;
+            let next_serial_number = highest_serial(&ctx).await + 1.into();
             match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
                 Ok(car_id) => Response::from_json(&car_id),
                 Err(e) => Response::error(e.to_string(), 500),
             }
         })
         .get_async("/scrape_next/:n", |_, ctx| async move {
-            let num: i8 = ctx.param("n").unwrap().parse().unwrap();
-            let next_serial_number = highest_serial(&ctx).await + num.into();
+            let num: SerialNumber = ctx.param("n").unwrap().into();
+            let next_serial_number = highest_serial(&ctx).await + num;
             match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
                 Ok(car_id) => Response::from_json(&car_id),
                 Err(e) => Response::error(e.to_string(), 500),
@@ -165,7 +166,8 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let next_serial_number = Car::first_unknown_serial_below(&ctx, num).await?;
             if let Some(next_serial_number) = next_serial_number {
                 match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
-                    Ok(car_id) => Response::from_json(&car_id),
+                    Ok(Some(car_id)) => Response::from_json(&ScrapeResponse::found(next_serial_number, car_id)),
+                    Ok(None) => Response::from_json(&ScrapeResponse::not_found(next_serial_number)),
                     Err(e) => Response::error(e.to_string(), 500),
                 }
             } else {
@@ -177,7 +179,8 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let next_serial_number = Car::first_unknown_serial_below(&ctx, num).await?;
             if let Some(next_serial_number) = next_serial_number {
                 match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
-                    Ok(car_id) => Response::from_json(&car_id),
+                    Ok(Some(car_id)) => Response::from_json(&ScrapeResponse::found(next_serial_number, car_id)),
+                    Ok(None) => Response::from_json(&ScrapeResponse::not_found(next_serial_number)),
                     Err(e) => Response::error(e.to_string(), 500),
                 }
             } else {
