@@ -1,4 +1,8 @@
-# Template: worker-rust
+# Failcat backend
+
+A totally normally named project tracking a totally normal car for a totally normal community.
+
+This rust code is compiled to wasm and shipped to cloudflare workers.  It uses D1 (still in alpha and completely unsupported in rust); scraping is done with a few simple APIs that are GETs for convenience when they ought to be POSTs.
 
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/cloudflare/templates/tree/main/worker-rust)
 
@@ -8,21 +12,11 @@ This template is designed for compiling Rust to WebAssembly and publishing the r
 
 ## Setup
 
-To create a `my-project` directory using this template, run:
+To build this repo you need rust and wrangler
 
-```sh
-$ npm init cloudflare my-project worker-rust
-# or
-$ yarn create cloudflare my-project worker-rust
-# or
-$ pnpm create cloudflare my-project worker-rust
-```
-
-> **Note:** Each command invokes [`create-cloudflare`](https://www.npmjs.com/package/create-cloudflare) for project creation.
 
 ## Usage
 
-This template starts you off with a `src/lib.rs` file, acting as an entrypoint for requests hitting your Worker. Feel free to add more code in this file, or create Rust modules anywhere else for this project to use.
 
 With `wrangler`, you can build, test, and deploy your Worker with the following commands:
 
