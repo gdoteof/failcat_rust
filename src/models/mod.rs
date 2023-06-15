@@ -11,15 +11,21 @@ use worker::*;
 
 pub mod car;
 pub use car::*;
+pub mod serial;
+pub use serial::*;
 
 #[derive(
     Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Clone, Display, From, Deref,
 )]
 pub struct Vin(pub String);
+
+
 #[derive(
     Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Display, From, Deref,
 )]
 pub struct CarId(pub i32);
+
+
 
 #[serde(rename_all = "lowercase")]
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -29,11 +35,17 @@ pub enum CarOrder {
     Serial,
 }
 
+
+
+
 #[derive(Debug)]
 pub enum CarQueryError {
     ParseIntError(ParseIntError),
     ParseSerialError, // Replace with the actual error type from SerialNumber::from_str
 }
+
+
+
 #[derive(
     Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, From, Deref,
 )]
@@ -44,23 +56,37 @@ impl Display for SerialNumber {
     }
 }
 
+
+
+
 impl SerialNumber {
-    fn from_str(serial: &str) -> Self {
-        SerialNumber(
-            serial
-                .split_whitespace()
-                .last()
-                .unwrap()
-                .parse::<i32>()
-                .unwrap_or_else(|_| panic!("Could not parse ->>{}<<-", serial)),
-        )
+    pub async fn find_first_unknown_below(ctx: &RouteContext<()>, start: i32) -> Result<Option<SerialNumber>> {
+        let d1 = ctx.env.d1("failcat_db")?;
+        let mut current = start;
+        loop {
+            let statement = d1.prepare(&format!("SELECT * FROM cars WHERE serial_number = {}", current));
+            let rows = statement
+                .first::<i32>(Some("serial_number"))
+                .await?;
+            
+            if rows.is_none() {
+                return Ok(Some(SerialNumber(current)));
+            }
+
+            if current == 0 {
+                break;
+            }
+
+            current -= 1;
+        }
+        Ok(None)
     }
 }
 
 impl From<Vin> for SerialNumber {
     fn from(vin: Vin) -> Self {
         // SerialNumber is last 6 digits (0 padded) of Vin
-        SerialNumber::from_str(&vin.0[11..])
+        SerialNumber::from(&vin.0[11..].into())
     }
 }
 
@@ -300,7 +326,7 @@ impl CarRepository {
             sql += " WHERE ";
 
             if let Some(dealer) = &query.dealer {
-                sql += "dealer = ? AND ";
+                sql += "sold_to = ? AND ";
                 bindings.push(dealer.into());
             }
 
