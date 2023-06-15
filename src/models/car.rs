@@ -335,4 +335,51 @@ impl Car {
         console_debug!("returning nothing, sadly");
         Ok(None)
     }
+
+        /*
+        let statement = d1.prepare("SELECT * FROM cars WHERE id = ?");
+        let query = statement.bind(&[id.0.into()])?;
+        let result = query.first::<Car>(None).await?;
+        */
+
+
+    pub async fn first_unknown_serial_above(ctx: &RouteContext<()>, num: SerialNumber) -> Result<Option<SerialNumber>> {
+        let d1 = ctx.env.d1("failcat_db")?;
+        let statement = d1.prepare("
+            SELECT (a.num + 1) AS first_missing_number
+            FROM numbers AS a
+            LEFT JOIN numbers AS b ON a.num + 1 = b.num
+            WHERE a.num >= ? AND b.num IS NULL
+            ORDER BY a.num
+            LIMIT 1;
+        ");
+        let query = statement.bind( &[num.0.into()])?;
+        let rows = query
+            .first::<i32>(Some("first_missing_number"))
+            .await?;
+        match rows {
+            Some(row) => Ok(Some(SerialNumber(row+1))),
+            None => Ok(None),
+        }
+    }
+
+    pub async fn first_unknown_serial_below(ctx: &RouteContext<()>, num: SerialNumber) -> Result<Option<SerialNumber>> {
+        let d1 = ctx.env.d1("failcat_db")?;
+        let statement = d1.prepare("
+            SELECT (a.num - 1) AS first_missing_number
+            FROM numbers AS a
+            LEFT JOIN numbers AS b ON a.num - 1 = b.num
+            WHERE a.num <= 10 AND b.num IS NULL
+            ORDER BY a.num DESC
+            LIMIT 1;
+        ");
+        let query = statement.bind( &[num.0.into()])?;
+        let rows = query
+            .first::<i32>(Some("first_missing_number"))
+            .await?;
+        match rows {
+            Some(row) => Ok(Some(SerialNumber(row+1))),
+            None => Ok(None),
+        }
+    }
 }
