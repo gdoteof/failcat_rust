@@ -346,16 +346,16 @@ impl Car {
     pub async fn first_unknown_serial_above(ctx: &RouteContext<()>, num: SerialNumber) -> Result<Option<SerialNumber>> {
         let d1 = ctx.env.d1("failcat_db")?;
         let statement = d1.prepare("
-            SELECT (a.num + 1) AS first_missing_number
-            FROM numbers AS a
-            LEFT JOIN numbers AS b ON a.num + 1 = b.num
-            WHERE a.num >= ? AND b.num IS NULL
-            ORDER BY a.num
+            SELECT (a.serial_number + 1) AS first_missing_serial_number
+            FROM cars AS a
+            LEFT JOIN cars AS b ON a.serial_number = b.serial_number
+            WHERE a.serial_number >= ? AND b.serial_number IS NULL
+            ORDER BY a.serial_number
             LIMIT 1;
         ");
         let query = statement.bind( &[num.0.into()])?;
         let rows = query
-            .first::<i32>(Some("first_missing_number"))
+            .first::<i32>(Some("first_missing_serial_number"))
             .await?;
         match rows {
             Some(row) => Ok(Some(SerialNumber(row+1))),
@@ -364,22 +364,35 @@ impl Car {
     }
 
     pub async fn first_unknown_serial_below(ctx: &RouteContext<()>, num: SerialNumber) -> Result<Option<SerialNumber>> {
+        console_log!("first_unknown_serial_below({})", num);
         let d1 = ctx.env.d1("failcat_db")?;
+        console_log!("got d1");
+
         let statement = d1.prepare("
-            SELECT (a.num - 1) AS first_missing_number
-            FROM numbers AS a
-            LEFT JOIN numbers AS b ON a.num - 1 = b.num
-            WHERE a.num <= 10 AND b.num IS NULL
-            ORDER BY a.num DESC
-            LIMIT 1;
+        SELECT a.serial_number + 1 AS first_missing_serial_number
+        FROM cars AS a
+        LEFT JOIN cars AS b ON a.serial_number + 1 = b.serial_number
+        WHERE a.serial_number < ? AND b.serial_number IS NULL
+        ORDER BY a.serial_number DESC
+        LIMIT 1;
+
         ");
         let query = statement.bind( &[num.0.into()])?;
+        console_log!("got query");
         let rows = query
-            .first::<i32>(Some("first_missing_number"))
+            .raw::<i32>()
             .await?;
+        console_log!("got rows: {:?}", rows);
+        match (rows.len(), rows.get(0).map(|inner| inner.len())) {
+            (1, Some(1)) => Ok(Some(SerialNumber(*rows.get(0).unwrap().first().unwrap()))),
+            _ => Ok(None),
+        }
+
+        /*
         match rows {
             Some(row) => Ok(Some(SerialNumber(row+1))),
             None => Ok(None),
         }
+        */
     }
 }

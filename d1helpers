@@ -1,0 +1,6 @@
+       SELECT (a.serial_number + 1) AS first_missing_serial_numberber
+            FROM cars AS a
+            LEFT JOIN cars AS b ON a.serial_number = b.serial_number
+            WHERE a.serial_number >= 41325 AND b.serial_number IS NULL
+            ORDER BY a.serial_number
+            LIMIT 1;

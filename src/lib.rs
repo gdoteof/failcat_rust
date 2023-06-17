@@ -176,7 +176,7 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         })
         .get_async("/scrape_above/:n", |_, ctx| async move {
             let num: SerialNumber = ctx.param("n").unwrap().into();
-            let next_serial_number = Car::first_unknown_serial_below(&ctx, num).await?;
+            let next_serial_number = Car::first_unknown_serial_above(&ctx, num).await?;
             if let Some(next_serial_number) = next_serial_number {
                 match attempt_to_scrape_from_serial(next_serial_number, &ctx).await {
                     Ok(Some(car_id)) => Response::from_json(&ScrapeResponse::found(next_serial_number, car_id)),
