@@ -346,12 +346,18 @@ impl Car {
     pub async fn first_unknown_serial_above(ctx: &RouteContext<()>, num: SerialNumber) -> Result<Option<SerialNumber>> {
         let d1 = ctx.env.d1("failcat_db")?;
         let statement = d1.prepare("
-            SELECT (a.serial_number + 1) AS first_missing_serial_number
-            FROM cars AS a
-            LEFT JOIN cars AS b ON a.serial_number = b.serial_number
-            WHERE a.serial_number >= ? AND b.serial_number IS NULL
-            ORDER BY a.serial_number
-            LIMIT 1;
+        WITH RECURSIVE
+        seq(serial_number) AS (
+          SELECT ?
+          UNION ALL
+          SELECT serial_number + 1 FROM seq WHERE serial_number + 1 <= (SELECT MAX(serial_number) FROM cars)
+        )
+      SELECT MIN(seq.serial_number) AS missing_serial_number
+      FROM seq
+      LEFT JOIN cars ON seq.serial_number = cars.serial_number
+      WHERE cars.serial_number IS NULL;
+      
+
         ");
         let query = statement.bind( &[num.0.into()])?;
         let rows = query
@@ -368,14 +374,18 @@ impl Car {
         let d1 = ctx.env.d1("failcat_db")?;
         console_log!("got d1");
 
+        // this is pretty dumb, we should probably have a table of all serial numbers and join
         let statement = d1.prepare("
-        SELECT a.serial_number + 1 AS first_missing_serial_number
-        FROM cars AS a
-        LEFT JOIN cars AS b ON a.serial_number + 1 = b.serial_number
-        WHERE a.serial_number < ? AND b.serial_number IS NULL
-        ORDER BY a.serial_number DESC
-        LIMIT 1;
-
+        WITH RECURSIVE
+        seq(serial_number) AS (
+          SELECT ?
+          UNION ALL
+          SELECT serial_number - 1 FROM seq WHERE serial_number - 1 >= (SELECT MIN(serial_number) FROM cars)
+        )
+      SELECT MAX(seq.serial_number) AS missing_serial_number
+      FROM seq
+      LEFT JOIN cars ON seq.serial_number = cars.serial_number
+      WHERE cars.serial_number IS NULL;
         ");
         let query = statement.bind( &[num.0.into()])?;
         console_log!("got query");
