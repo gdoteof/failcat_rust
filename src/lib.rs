@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use common::ScrapeResponse;
-use models::{highest_serial, Car, CarQuery, CarRepository, DealerRepository, SerialNumber};
+use models::{highest_serial, Car, CarQuery, CarRepository, DealerRepository, SerialNumber, CarId};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use scraper::vinlookup::{
     self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup,
@@ -38,11 +38,11 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let version = ctx.var("WORKERS_RS_VERSION")?.to_string();
             Response::ok(version)
         })
-        .get_async("/car/:serial", |_, ctx| async move {
-            let id = ctx.param("serial").unwrap();
-            match Car::from_d1_serial(
-                SerialNumber(id.parse::<i32>().expect("could not parse CarId")),
-                &ctx.env.d1("failcat_db").unwrap(),
+        .get_async("/car/:id", |_, ctx| async move {
+            let id = ctx.param("id").unwrap();
+            match Car::from_d1(
+                CarId(id.parse::<i32>().expect("could not parse CarId")),
+                ctx.env.d1("failcat_db").unwrap(),
             )
             .await
             {
@@ -52,11 +52,8 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         })
         .get_async("/cars", |request, ctx| async move {
             let url = request.url().unwrap();
-            console_log!("url: {:?}", url);
             let query_str = url.query().unwrap_or_default();
-            console_log!("query_str: {:?}", query_str);
             let car_query = serde_qs::from_str::<CarQuery>(query_str).unwrap();
-            console_log!("car_query: {:?}", car_query);
 
             let cars = CarRepository::new(ctx.env.d1("failcat_db").unwrap())
                 .get_all_paginated(car_query)
