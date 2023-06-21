@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use common::ScrapeResponse;
-use models::{highest_serial, Car, CarId, CarQuery, CarRepository, DealerRepository, SerialNumber};
+use models::{highest_serial, Car, CarQuery, CarRepository, DealerRepository, SerialNumber};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use scraper::vinlookup::{
     self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup,
@@ -38,11 +38,11 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let version = ctx.var("WORKERS_RS_VERSION")?.to_string();
             Response::ok(version)
         })
-        .get_async("/car/:id", |_, ctx| async move {
-            let id = ctx.param("id").unwrap();
-            match Car::from_d1(
-                CarId(id.parse::<i32>().expect("could not parse CarId")),
-                &ctx,
+        .get_async("/car/:serial", |_, ctx| async move {
+            let id = ctx.param("serial").unwrap();
+            match Car::from_d1_serial(
+                SerialNumber(id.parse::<i32>().expect("could not parse CarId")),
+                &ctx.env.d1("failcat_db").unwrap(),
             )
             .await
             {
@@ -198,6 +198,21 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
                 Err(e) => Response::error(e.to_string(), 500),
             }
         })
+        .get_async("/window-sticker-view/:vin", |_, ctx| async move {
+            let vin = ctx.param("vin").unwrap();
+            match vinlookup(vin).await {
+                Ok(data) => {
+                    if data == b"SAP API limits exceeded" {
+                        return Response::error("limits exceeded downstream", 429);
+                    }
+                    Ok(Response::with_headers(
+                        Response::from_bytes(data).expect("couldn't get bytes"),
+                        view_pdf_headers().into(),
+                    ))
+                }
+                Err(e) => Response::error(e.to_string(), 500),
+            }
+        })
         .get_async("/window-sticker/:vin", |_, ctx| async move {
             let vin = ctx.param("vin").unwrap();
             match vinlookup(vin).await {
@@ -221,6 +236,12 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
         .run(req.clone()?, env)
         .await?;
     Ok(handle_cors(&req, response))
+}
+
+fn view_pdf_headers() -> HeaderMap {
+    let mut headers = HeaderMap::new();
+    headers.insert("Content-Type", HeaderValue::from_static("application/pdf"));
+    headers
 }
 
 fn file_pdf_headers(vin: &str) -> HeaderMap {
