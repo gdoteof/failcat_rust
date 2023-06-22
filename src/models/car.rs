@@ -360,11 +360,12 @@ impl Car {
         ");
         let query = statement.bind( &[num.0.into()])?;
         let rows = query
-            .first::<i32>(Some("first_missing_serial_number"))
+            .raw::<i32>()
             .await?;
-        match rows {
-            Some(row) => Ok(Some(SerialNumber(row+1))),
-            None => Ok(None),
+        console_log!("got rows: {:?}", rows);
+        match (rows.len(), rows.get(0).map(|inner| inner.len())) {
+            (1, Some(1)) => Ok(Some(SerialNumber(*rows.get(0).unwrap().first().unwrap()))),
+            _ => Ok(None),
         }
     }
 
