@@ -2,15 +2,48 @@ use std::fmt::{Display, Formatter};
 use std::num::ParseIntError;
 use std::str::FromStr;
 
-use derive_more::{From, Deref, Add};
-use serde::{Serialize, Deserialize};
+use derive_more::{Add, Deref, From};
+use serde::{Deserialize, Serialize};
 use worker::RouteContext;
 
 use super::Vin;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Add, Deref, From)]
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Add,
+    Deref,
+    From,
+)]
 pub struct SerialNumber(pub i32);
 
+impl From<Vin> for SerialNumber {
+    fn from(vin: Vin) -> Self {
+        let last_six: &str = &vin.0[11..];
+        // SerialNumber is last 6 digits (0 padded) of Vin
+        SerialNumber::from(
+            last_six
+                .parse::<i32>()
+                .unwrap_or_else(
+                    |_| panic!("Couldn't parse last 6 digits of vin {} into i32, last_six: {}", vin.0, last_six)
+                )
+        )
+    }
+}
+
+impl From<&String> for SerialNumber {
+    fn from(s: &String) -> Self {
+        SerialNumber::from_str(s).expect("Couldn't parse string into serial number")
+    }
+}
 
 #[derive(Debug)]
 pub enum SerialNumberParseError {
@@ -40,23 +73,9 @@ impl FromStr for SerialNumber {
     }
 }
 
-impl From<&std::string::String> for SerialNumber {
-    fn from(serial: &std::string::String) -> Self {
-        SerialNumber::from_str(serial).unwrap()
-    }
-}
-
 impl Display for SerialNumber {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-
-impl From<Vin> for SerialNumber {
-    fn from(vin: Vin) -> Self {
-        // SerialNumber is last 6 digits (0 padded) of Vin
-        SerialNumber::from(&vin.0[11..].into())
     }
 }
 

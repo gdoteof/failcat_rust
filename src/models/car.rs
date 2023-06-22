@@ -1,7 +1,4 @@
-use crate::{
-    common::deserialize_string_to_datetime,
-    scraper::vinlookup::{self, get_possible_vins_from_serial, VinYear},
-};
+use crate::{scraper::vinlookup::{self, get_possible_vins_from_serial, VinYear}, common::deserialize_string_to_datetime};
 use chrono::{DateTime, Utc};
 use worker::wasm_bindgen::JsValue; // Add Fixed to imports
 
@@ -130,20 +127,22 @@ impl Car {
         console_debug!("bind list {:?}", bind_list);
 
         match maybe_statement {
-            Ok(statement) => match statement.first::<()>(None).await {
-                Ok(None) => {
-                    let car_id = Car::from_d1_serial(self.serial_number, &d1)
-                        .await?
-                        .expect("Couldn't find car we just saved");
-                    Ok(car_id)
+            Ok(statement) => {
+                match statement.first::<()>(None).await {
+                    Ok(None) => {
+                        let car_id = Car::from_d1_serial(self.serial_number, &d1)
+                            .await?
+                            .expect("Couldn't find car we just saved");
+                        Ok(car_id)
+                    }
+                    Ok(Some(something)) => Err(format!(
+                        "\n\nError inserting car into db unexpected: {:?}",
+                        something
+                    )
+                    .into()),
+                    Err(e) => Err(format!("\n\nError inserting car into db: {:?}", e).into()),
                 }
-                Ok(Some(something)) => Err(format!(
-                    "\n\nError inserting car into db unexpected: {:?}",
-                    something
-                )
-                .into()),
-                Err(e) => Err(format!("\n\nError inserting car into db: {:?}", e).into()),
-            },
+            }
             Err(e) => {
                 console_debug!("\n\nActually binding failed with: {:?}", e);
                 Err(e)
@@ -196,22 +195,9 @@ impl Car {
             Err(_) => Err("Failed to save to kv".into()),
         }
     }
+
     pub async fn from_pdf(pdf_bytes: Vec<u8>) -> worker::Result<Option<Car>> {
-        console_log!("Parsing PDF of length {}", pdf_bytes.len());
         let pdf_text = pdf_extract::extract_text_from_mem(&pdf_bytes).expect("Couldn't parse pdf");
-
-        let find_after = |text: &str, label: &str, end_label: &str| -> String {
-            let start_index = text.find(label).map(|i| i + label.len()).unwrap_or(0);
-            let end_index = text[start_index..]
-                .find(end_label)
-                .map(|i| start_index + i)
-                .unwrap_or(text.len());
-            text.get(start_index..end_index)
-                .map(|s| s.trim())
-                .unwrap_or("")
-                .to_string()
-        };
-
         let model = "MODEL/OPT.CODE";
         let ext_color = "EXTERIOR COLOR";
         let int_color = "INTERIOR COLOR";
@@ -219,48 +205,49 @@ impl Car {
         let port = "PORT OF ENTRY";
         let sold_to = "Sold To";
         let ship_to = "Ship To";
+        let model_index = pdf_text.find(model).unwrap_or(0);
+        let ext_color_index = pdf_text.find(ext_color).unwrap_or(0);
+        let int_color_index = pdf_text.find(int_color).unwrap_or(0);
+        let vin_index = pdf_text.find(vin_label).unwrap_or(0);
+        let port_index = pdf_text.find(port).unwrap_or(0);
+        let sold_to_index = pdf_text.find(sold_to).unwrap_or(0);
+        let ship_to_index = pdf_text.find(ship_to).unwrap_or(0);
+        let car_description = pdf_text[..model_index].trim().to_string();
 
-        console_log!("before model");
-        let model_data = find_after(&pdf_text, model, ext_color);
-        console_log!("after model: {}", model_data);
-        let vin_code: Vec<&str> = model_data.split('/').map(|s| s.trim()).collect();
-        console_log!("after vin code: {:?}", vin_code);
+        let vin_code: Vec<&str> = pdf_text[model_index + model.len() + 1..ext_color_index]
+            .split('/')
+            .map(|s| s.trim())
+            .collect();
         let _model_code = vin_code.first().unwrap_or(&"").to_string();
-        console_log!("after model code: {}", _model_code);
         let opt_code = vin_code.get(1).unwrap_or(&"").to_string();
-        console_log!("after opt code: {}", opt_code);
-
-        let ext_color_value = find_after(&pdf_text, ext_color, int_color);
-        console_log!("after ext color: {}", ext_color_value);
-        let int_color_value = find_after(&pdf_text, int_color, vin_label);
-        console_log!("after int color: {}", int_color_value);
-        let vin_value = find_after(&pdf_text, vin_label, port);
-        console_log!("after vin: {}", vin_value);
-        let sold_to_value = find_after(&pdf_text, sold_to, ship_to);
-        console_log!("after sold to: {}", sold_to_value);
-        let ship_to_value = find_after(&pdf_text, ship_to, "");
-        console_log!("after ship to: {}", ship_to_value);
-
-        let dealer_address = sold_to_value.replace(&ship_to_value, "").trim().to_string();
-        console_log!("after dealer address: {}", dealer_address);
-        let _zip = dealer_address
-            .get(dealer_address.len().saturating_sub(5)..)
-            .unwrap_or("")
+        let ext_color_value = pdf_text[ext_color_index + ext_color.len() + 1..int_color_index]
+            .trim()
             .to_string();
-        console_log!("after zip: {}", _zip);
-
-        let serial_number: SerialNumber = Vin(vin_value.clone()).into();
-        console_log!("after serial number: {}", serial_number);
-
+        let int_color_value = pdf_text[int_color_index + int_color.len() + 1..vin_index]
+            .trim()
+            .to_string();
+        let vin_value = pdf_text[vin_index + vin_label.len() + 1..port_index]
+            .trim()
+            .to_string();
+        let sold_to_value = pdf_text[sold_to_index + sold_to.len() + 2..ship_to_index]
+            .trim()
+            .to_string();
+        let ship_to_value = pdf_text
+            [ship_to_index + ship_to.len() + 2..ship_to_index + ship_to.len() + 2 + 5]
+            .trim()
+            .to_string();
+        let dealer_address = sold_to_value.replace(&ship_to_value, "").trim().to_string();
+        let _zip = dealer_address[dealer_address.len() - 5..].to_string();
+        let serial_number : SerialNumber = Vin(vin_value.clone()).into();
         let car = Car {
             id: None,
             vin: Vin(vin_value),
             ext_color: ext_color_value,
             int_color: int_color_value,
-            car_model: find_after(&pdf_text, "", model),
+            car_model: car_description,
             opt_code,
             ship_to: ship_to_value,
-            sold_to: sold_to_value.get(..5).unwrap_or("").to_string(),
+            sold_to: sold_to_value[..5].to_string(),
             created_date: Utc::now(),
             serial_number,
             model_year: VinYear::from_serial(serial_number).year.to_string(),
@@ -293,8 +280,7 @@ impl Car {
                                     let car = Car::from_pdf(data).await;
                                     match car {
                                         Ok(Some(mut car)) => {
-                                            let car_id: CarId =
-                                                car.to_d1(ctx.env.d1("failcat_db")?).await?;
+                                            let car_id: CarId = car.to_d1(ctx.env.d1("failcat_db")?).await?;
                                             car.set_id(car_id);
                                             return Ok(Some(car));
                                         }
@@ -349,16 +335,14 @@ impl Car {
         Ok(None)
     }
 
-    /*
-    let statement = d1.prepare("SELECT * FROM cars WHERE id = ?");
-    let query = statement.bind(&[id.0.into()])?;
-    let result = query.first::<Car>(None).await?;
-    */
+        /*
+        let statement = d1.prepare("SELECT * FROM cars WHERE id = ?");
+        let query = statement.bind(&[id.0.into()])?;
+        let result = query.first::<Car>(None).await?;
+        */
 
-    pub async fn first_unknown_serial_above(
-        ctx: &RouteContext<()>,
-        num: SerialNumber,
-    ) -> Result<Option<SerialNumber>> {
+
+    pub async fn first_unknown_serial_above(ctx: &RouteContext<()>, num: SerialNumber) -> Result<Option<SerialNumber>> {
         let d1 = ctx.env.d1("failcat_db")?;
         let statement = d1.prepare("
         WITH RECURSIVE
@@ -374,20 +358,17 @@ impl Car {
       
 
         ");
-        let query = statement.bind(&[num.0.into()])?;
+        let query = statement.bind( &[num.0.into()])?;
         let rows = query
             .first::<i32>(Some("first_missing_serial_number"))
             .await?;
         match rows {
-            Some(row) => Ok(Some(SerialNumber(row + 1))),
+            Some(row) => Ok(Some(SerialNumber(row+1))),
             None => Ok(None),
         }
     }
 
-    pub async fn first_unknown_serial_below(
-        ctx: &RouteContext<()>,
-        num: SerialNumber,
-    ) -> Result<Option<SerialNumber>> {
+    pub async fn first_unknown_serial_below(ctx: &RouteContext<()>, num: SerialNumber) -> Result<Option<SerialNumber>> {
         console_log!("first_unknown_serial_below({})", num);
         let d1 = ctx.env.d1("failcat_db")?;
         console_log!("got d1");
@@ -405,9 +386,11 @@ impl Car {
       LEFT JOIN cars ON seq.serial_number = cars.serial_number
       WHERE cars.serial_number IS NULL;
         ");
-        let query = statement.bind(&[num.0.into()])?;
+        let query = statement.bind( &[num.0.into()])?;
         console_log!("got query");
-        let rows = query.raw::<i32>().await?;
+        let rows = query
+            .raw::<i32>()
+            .await?;
         console_log!("got rows: {:?}", rows);
         match (rows.len(), rows.get(0).map(|inner| inner.len())) {
             (1, Some(1)) => Ok(Some(SerialNumber(*rows.get(0).unwrap().first().unwrap()))),
