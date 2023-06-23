@@ -12,6 +12,8 @@ pub mod car;
 pub use car::*;
 pub mod serial;
 pub use serial::*;
+pub mod dealer;
+pub use dealer::*;
 
 #[derive(
     Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Clone, Display, From, Deref,
@@ -123,95 +125,6 @@ impl CarModel {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct Dealer {
-    id: Option<i32>,
-    dealer_code: String,
-    address: String,
-    zip: String,
-    car_count: i32, // Aggregated value, can be calculated when needed
-                    // cars relationship is omitted here, but can be implemented if needed
-}
-
-pub struct DealerRepository {
-    d1: Database,
-}
-
-impl DealerRepository {
-    pub fn new(d1: Database) -> Self {
-        DealerRepository { d1 }
-    }
-
-    pub async fn get(&self, dealer_code: &str) -> worker::Result<Option<Dealer>> {
-        let statement = self
-            .d1
-            .prepare("SELECT * FROM dealers WHERE dealer_code = ?");
-        let query = statement.bind(&[dealer_code.into()])?;
-        let result = query.first::<Dealer>(None).await?;
-        Ok(result)
-    }
-
-    pub async fn create(&self, dealer: &Dealer) -> worker::Result<i32> {
-        let statement = self.d1.prepare(
-            "INSERT INTO dealers (dealer_code, address, zip, car_count) VALUES (?, ?, ?, ?)",
-        );
-        let query = statement.bind(&[
-            dealer.dealer_code.clone().into(),
-            dealer.address.clone().into(),
-            dealer.zip.clone().into(),
-            dealer.car_count.into(),
-        ])?;
-        match query.first(None).await? {
-            Some(Dealer { id, .. }) => Ok(id.unwrap()),
-            None => Err("No dealer found".into()),
-        }
-    }
-
-    pub async fn get_all(&self) -> worker::Result<Vec<Dealer>> {
-        let statement = self.d1.prepare("SELECT * FROM dealers");
-        let d1_result = statement.all().await?;
-        let result = d1_result.results::<Dealer>()?;
-        Ok(result)
-    }
-}
-
-impl Dealer {
-    pub fn new(dealer_code: String, address: String, zip: String) -> Self {
-        Dealer {
-            id: None,
-            dealer_code,
-            address,
-            zip,
-            car_count: 0, // Initialize with 0, update when needed
-        }
-    }
-
-    pub async fn from_d1(
-        dealer_code: &str,
-        ctx: &RouteContext<()>,
-    ) -> worker::Result<Option<Self>> {
-        let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
-        let statement = d1.prepare("SELECT * FROM dealers WHERE dealer_code = ?");
-        let query = statement.bind(&[dealer_code.into()])?;
-        let result = query.first::<Self>(None).await?;
-        Ok(result)
-    }
-
-    pub async fn to_d1(&self, ctx: &RouteContext<()>) -> worker::Result<()> {
-        let d1 = ctx.env.d1("failcat_db").expect("Couldn't get db");
-        let statement = d1.prepare(
-            "INSERT INTO dealers (dealer_code, address, zip, car_count) VALUES ($1, $2, $3, $4)",
-        );
-        let query = statement.bind(&[
-            self.dealer_code.clone().into(),
-            self.address.clone().into(),
-            self.zip.clone().into(),
-            self.car_count.into(),
-        ])?;
-        query.first::<Self>(None).await?;
-        Ok(())
-    }
-}
 
 pub struct CarRepository {
     pub d1: Database,
@@ -288,17 +201,18 @@ impl CarRepository {
         console_debug!("Bindings: {:?}", bindings);
         let statement = self.d1.prepare(&sql);
         let query = statement.bind(&bindings)?;
+        console_debug!("query: {:?}", query);
         let d1_result_result = query.all().await;
         let d1_result = d1_result_result?.results()?;
 
         Ok(d1_result)
     }
 }
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct CarQuery {
     pub dealer: Option<String>,
     pub perpage: Option<i32>,
-    pub offset: Option<i32>, 
+    pub offset: Option<i32>,
     pub order: Option<CarOrder>,
     pub minimum_serial: Option<SerialNumber>,
     pub maximum_serial: Option<SerialNumber>,

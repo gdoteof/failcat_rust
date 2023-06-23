@@ -1,7 +1,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use common::ScrapeResponse;
-use models::{highest_serial, Car, CarQuery, CarRepository, DealerRepository, SerialNumber, CarId};
+use models::{highest_serial, Car, CarQuery, CarRepository, DealerRepository, SerialNumber, CarId, Dealer};
 use reqwest_wasm::header::{HeaderMap, HeaderValue};
 use scraper::vinlookup::{
     self, attempt_to_scrape_from_serial, get_possible_vins_from_serial, vinlookup,
@@ -230,6 +230,23 @@ pub async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Respo
             let dealers = repo.get_all().await.expect("couldn't get dealers");
             Response::from_json(&dealers)
         })
+        .get_async("/dealers/:dealer_code", |_, ctx| async move {
+            let dealer_code = ctx.param("dealer_code").unwrap();
+            let dealer = Dealer::from_d1(dealer_code, ctx.env.d1("failcat_db")?).await.expect("couldn't get dealer");
+            Response::from_json(&dealer)
+        })
+        .get_async("/dealers/:dealer_code/cars", |_, ctx| async move {
+            let dealer_code = ctx.param("dealer_code").unwrap();
+            let dealer = Dealer {
+                dealer_code: dealer_code.to_string(),
+                ..Default::default()
+            };
+            let cars = dealer.cars(&ctx).await;
+            match cars {
+                Ok(cars) => Response::from_json(&cars),
+                Err(e) => Response::error(e.to_string(), 500),
+            }
+        })
         .run(req.clone()?, env)
         .await?;
     Ok(handle_cors(&req, response))
@@ -260,7 +277,7 @@ fn handle_cors(req: &Request, res: Response) -> Response {
         .get("Origin")
         .unwrap_or_default()
         .unwrap_or_default();
-    if origin.contains("vteng.io") || origin.contains("localhost") {
+    if origin.contains("vteng.io") || origin.contains("localhost") || origin.contains("failcatweb.pages.dev"){
         let mut headers = HeaderMap::new();
         headers.insert(
             "Access-Control-Allow-Origin",
